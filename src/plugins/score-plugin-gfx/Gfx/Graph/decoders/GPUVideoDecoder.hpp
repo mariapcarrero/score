@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Gfx/Graph/Node.hpp>
-#include <Gfx/Graph/NodeRenderer.hpp>
 #include <Gfx/Graph/RenderList.hpp>
 #include <Gfx/Graph/RenderState.hpp>
 #include <Video/VideoInterface.hpp>
@@ -14,49 +13,72 @@ namespace score::gfx
 {
 // TODO the "model" nodes should have a first update step so that they
 // can share data across all renderers during a tick
-struct GPUVideoDecoder
+struct VideoNode;
+
+/**
+ * @brief Processes and renders a video frame on the GPU
+ *
+ * This class is used as a base type for GPU decoders.
+ *
+ * Child classes must :
+ *
+ * - Create relevant shaders, samplers & textures in the init method.
+ * - When exec is called, copy the data from the AVFrame to the QRhiTextures.
+ *
+ * See RGB0Decoder for an example with a single texture, YUV420Decoder for an
+ * example with multiple textures.
+ */
+class GPUVideoDecoder
 {
-  virtual ~GPUVideoDecoder() { }
-  virtual void init(RenderList& r, GenericNodeRenderer& rendered) = 0;
+public:
+  GPUVideoDecoder();
+  virtual ~GPUVideoDecoder();
+
+  /**
+   * @brief Initialize a GPUVideoDecoder
+   *
+   * This method must :
+   * - Create samplers and textures for the video format.
+   * - Create shaders that will render the data put into these textures.
+   *
+   * It returns a {vertex, fragment} shader pair.
+   */
+  [[nodiscard]]
+  virtual std::pair<QShader, QShader> init(RenderList& r) = 0;
+
+  /**
+   * @brief Decode and upload a video frame to the GPU.
+   */
   virtual void exec(
       RenderList&,
-      GenericNodeRenderer& rendered,
       QRhiResourceUpdateBatch& res,
       AVFrame& frame)
       = 0;
-  virtual void release(RenderList&, GenericNodeRenderer& rendered) = 0;
 
-  static inline QRhiTextureSubresourceUploadDescription createTextureUpload(
+  /**
+   * @brief This method will release all the created samplers and textures.
+   */
+  void release(RenderList&);
+
+  /**
+   * @brief Utility method to create a QRhiTextureSubresourceUploadDescription.
+   *
+   * If possible, it tries to avoid a copy of pixels : pixels must not be freed before the
+   * frame has been rendered.
+   */
+  static QRhiTextureSubresourceUploadDescription createTextureUpload(
       uint8_t* pixels,
       int w,
       int h,
       int bytesPerPixel,
-      int stride)
-  {
-    QRhiTextureSubresourceUploadDescription subdesc;
+      int stride);
 
-    const int rowBytes = w * bytesPerPixel;
-    if (rowBytes == stride)
-    {
-      subdesc.setData(QByteArray::fromRawData(
-          reinterpret_cast<const char*>(pixels), rowBytes * h));
-    }
-    else
-    {
-      QByteArray data{w * h, Qt::Uninitialized};
-      for (int r = 0; r < h; r++)
-      {
-        const char* input = reinterpret_cast<const char*>(pixels + stride * r);
-        char* output = data.data() + rowBytes * r;
-        std::copy(input, input + rowBytes, output);
-      }
-      subdesc.setData(std::move(data));
-    }
-
-    return subdesc;
-  }
+  std::vector<Sampler> samplers;
 };
 
+/**
+ * @brief Default decoder when we do not know what to render.
+ */
 struct EmptyDecoder : GPUVideoDecoder
 {
   static const constexpr auto hashtag_no_filter = R"_(#version 450
@@ -65,26 +87,20 @@ struct EmptyDecoder : GPUVideoDecoder
     }
   )_";
 
-  EmptyDecoder(NodeModel& n)
-      : node{n}
+  explicit EmptyDecoder()
   {
   }
 
-  NodeModel& node;
-  void init(RenderList& r, GenericNodeRenderer& rendered) override
+  std::pair<QShader, QShader> init(RenderList& r) override
   {
-    std::tie(node.m_vertexS, node.m_fragmentS) = score::gfx::makeShaders(
-        node.mesh().defaultVertexShader(), hashtag_no_filter);
+    return score::gfx::makeShaders(TexturedTriangle::instance().defaultVertexShader(), hashtag_no_filter);
   }
 
   void exec(
       RenderList&,
-      GenericNodeRenderer& rendered,
       QRhiResourceUpdateBatch& res,
       AVFrame& frame) override
   {
   }
-
-  void release(RenderList&, GenericNodeRenderer& n) override { }
 };
 }

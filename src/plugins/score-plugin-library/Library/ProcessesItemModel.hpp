@@ -10,6 +10,8 @@
 #include <QDir>
 #include <QIcon>
 
+#include <nano_observer.hpp>
+
 #include <score_plugin_library_export.h>
 
 #include <verdigris>
@@ -36,6 +38,7 @@ ProcessNode& addToLibrary(ProcessNode& parent, Library::ProcessData&& data);
 
 class SCORE_PLUGIN_LIBRARY_EXPORT ProcessesItemModel
     : public TreeNodeBasedItemModel<ProcessNode>
+    , public Nano::Observer
 {
 public:
   using QAbstractItemModel::beginResetModel;
@@ -60,6 +63,8 @@ public:
   QStringList mimeTypes() const override;
   QMimeData* mimeData(const QModelIndexList& indexes) const override;
   Qt::DropActions supportedDragActions() const override;
+
+  void on_newPlugin(const Process::ProcessModelFactory& fact);
 
 private:
   ProcessNode m_root;

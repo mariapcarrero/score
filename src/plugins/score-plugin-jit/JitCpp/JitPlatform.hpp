@@ -34,6 +34,9 @@ namespace Jit
 
 static inline std::string locateSDK()
 {
+  if(QString sdk = qgetenv("SCORE_JIT_SDK"); !sdk.isEmpty())
+    return sdk.toStdString();
+
   auto& ctx = score::AppContext().settings<Library::Settings::Model>();
   QString path = ctx.getPath() + "/SDK/";
 
@@ -100,6 +103,7 @@ populateCompileOptions(std::vector<std::string>& args, CompilerOptions opts)
 {
   args.push_back("-triple");
   args.push_back(llvm::sys::getDefaultTargetTriple());
+
   args.push_back("-target-cpu");
   args.push_back(llvm::sys::getHostCPUName().lower());
 
@@ -139,7 +143,8 @@ populateCompileOptions(std::vector<std::string>& args, CompilerOptions opts)
   args.push_back("-mreassociate");
   args.push_back("-freciprocal-math");
   args.push_back("-fno-rounding-math");
-  args.push_back("-fno-trapping-math");
+
+  // disappeard in clang 12 args.push_back("-fno-trapping-math");
   args.push_back("-ffp-contract=fast");
 
 #if !defined(__linux__) // || (defined(__linux__) && __GLIBC_MINOR__ >= 31)
@@ -155,8 +160,10 @@ populateCompileOptions(std::vector<std::string>& args, CompilerOptions opts)
   args.push_back("-fno-builtin");
 #endif
 
-  args.push_back("-fgnuc-version=10.0.1");
-
+  args.push_back("-fgnuc-version=4.2.1");
+#if defined(__APPLE__)
+  args.push_back("-fmax-type-align=16");
+#endif
   args.push_back("-mrelocation-model");
   args.push_back("pic");
   args.push_back("-pic-level");
@@ -167,6 +174,10 @@ populateCompileOptions(std::vector<std::string>& args, CompilerOptions opts)
   args.push_back("hidden");
 
   args.push_back("-fvisibility-inlines-hidden");
+
+  // // tls:
+  args.push_back("-ftls-model=local-exec");
+  args.push_back("-fno-emulated-tls");
 
   // if fsanitize:
   args.push_back("-mrelax-all");
@@ -203,10 +214,15 @@ populateCompileOptions(std::vector<std::string>& args, CompilerOptions opts)
   else
   {
     args.push_back("-munwind-tables");
+
     args.push_back("-fcxx-exceptions");
     args.push_back("-fexceptions");
 #if defined(_WIN32)
-    args.push_back("-fseh-exceptions");
+  #if LLVM_VERSION_MAJOR < 12
+      args.push_back("-fseh-exceptions");
+  #else
+      args.push_back("-exception-model=seh");
+  #endif
 #endif
   }
   args.push_back("-faddrsig");
@@ -218,7 +234,12 @@ populateCompileOptions(std::vector<std::string>& args, CompilerOptions opts)
 
 static inline void populateDefinitions(std::vector<std::string>& args)
 {
-  args.push_back("-DASIO_STANDALONE=1");
+  #if defined(__APPLE__)
+  // needed because otherwise readerwriterqueue includes CoreFoundation.h ...
+  args.push_back("-DMOODYCAMEL_MAYBE_ALIGN_TO_CACHELINE=");
+  #endif
+  args.push_back("-DBOOST_MATH_DISABLE_FLOAT128=1");
+  args.push_back("-DBOOST_ASIO_DISABLE_CONCEPTS=1");
   args.push_back("-DBOOST_MULTI_INDEX_ENABLE_INVARIANT_CHECKING");
   args.push_back("-DBOOST_MULTI_INDEX_ENABLE_SAFE_MODE");
   args.push_back("-DQT_CORE_LIB");
@@ -233,17 +254,33 @@ static inline void populateDefinitions(std::vector<std::string>& args)
   args.push_back("-DQT_SVG_LIB");
   args.push_back("-DQT_WEBSOCKETS_LIB");
   args.push_back("-DQT_WIDGETS_LIB");
+  args.push_back("-DQT_XML_LIB");
   args.push_back("-DRAPIDJSON_HAS_STDSTRING=1");
+
+  // TLS apparently not yet well supported by lljit :
+  // - undefined references to ___emutls_add_address
+  // - MachO TLV relocations not yet supported
+#if __APPLE__
+  args.push_back("-DSPDLOG_NO_TLS=1");
+  args.push_back("-DMOODYCAMEL_NO_THREAD_LOCAL=1");
+
+  args.push_back("-D__thread=__do_not_use_thread_local__");
+  args.push_back("-Dthread_local=__do_not_use_thread_local__");
+  args.push_back("-D_Thread_local=__do_not_use_thread_local__");
+#endif
+
+#if defined(SCORE_DEBUG)
   args.push_back("-DSCORE_DEBUG");
+#endif
   args.push_back("-DSCORE_LIB_BASE");
   args.push_back("-DSCORE_LIB_DEVICE");
   args.push_back("-DSCORE_LIB_INSPECTOR");
   args.push_back("-DSCORE_LIB_LOCALTREE");
   args.push_back("-DSCORE_LIB_PROCESS");
   args.push_back("-DSCORE_LIB_STATE");
-  args.push_back("-DSCORE_ADDON_GFX");
-  args.push_back("-DSCORE_ADDON_REMOTECONTROL");
-  args.push_back("-DSCORE_ADDON_NODAL");
+  args.push_back("-DSCORE_PLUGIN_GFX");
+  args.push_back("-DSCORE_PLUGIN_REMOTECONTROL");
+  args.push_back("-DSCORE_PLUGIN_NODAL");
   args.push_back("-DSCORE_PLUGIN_AUDIO");
   args.push_back("-DSCORE_PLUGIN_AUTOMATION");
   args.push_back("-DSCORE_PLUGIN_CURVE");
@@ -256,13 +293,20 @@ static inline void populateDefinitions(std::vector<std::string>& args)
   args.push_back("-DSCORE_PLUGIN_PROTOCOLS");
   args.push_back("-DSCORE_PLUGIN_SCENARIO");
   args.push_back("-DSCORE_PLUGIN_MIDI");
+  args.push_back("-DSCORE_PLUGIN_PROTOCOLS");
   args.push_back("-DSCORE_PLUGIN_RECORDING");
+  args.push_back("-DSCORE_PLUGIN_TRANSPORT");
   // args.push_back("-DSCORE_STATIC_PLUGINS");
   args.push_back("-DTINYSPLINE_DOUBLE_PRECISION");
-  args.push_back("-D_GNU_SOURCE");
+  args.push_back("-D_GNU_SOURCE=1");
   args.push_back("-D__STDC_CONSTANT_MACROS");
   args.push_back("-D__STDC_FORMAT_MACROS");
   args.push_back("-D__STDC_LIMIT_MACROS");
+  #if defined(FFTW_SINGLE_ONLY)
+  args.push_back("-DFFTW_SINGLE_ONLY");
+  #elif defined(FFTW_DOUBLE_ONLY)
+  args.push_back("-DFFTW_DOUBLE_ONLY");
+  #endif
 }
 
 static inline auto getPotentialTriples()
@@ -378,6 +422,7 @@ static inline void populateIncludeDirs(std::vector<std::string>& args)
   args.push_back(sdk + "/lib/clang/" + llvm_lib_version);
 
 #if defined(_LIBCPP_VERSION)
+  args.push_back("-stdlib=libc++");
   args.push_back("-internal-isystem");
   args.push_back(sdk + "/include/c++/v1");
 #elif defined(_GLIBCXX_RELEASE)
@@ -472,6 +517,9 @@ static inline void populateIncludeDirs(std::vector<std::string>& args)
   include("qt/QtSvg");
   include("qt/QtSql");
   include("qt/QtOpenGL");
+  include("qt/QtShaderTools");
+  include("qt/QtShaderTools/" + qt_version);
+  include("qt/QtShaderTools/" + qt_version + "/QtShaderTools");
   include("qt/QtSerialBus");
   include("qt/QtSerialPort");
 

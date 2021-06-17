@@ -52,7 +52,6 @@ set(HDRS
     Gfx/Images/Executor.hpp
     Gfx/Images/Metadata.hpp
     Gfx/Images/Process.hpp
-    Gfx/Images/Inspector.hpp
     Gfx/Images/Layer.hpp
 
     Gfx/Graph/Window.hpp
@@ -66,6 +65,7 @@ set(HDRS
     Gfx/Graph/RenderList.hpp
     Gfx/Graph/NodeRenderer.hpp
     Gfx/Graph/VideoNode.hpp
+    Gfx/Graph/VideoNodeRenderer.hpp
     Gfx/Graph/PhongNode.hpp
     Gfx/Graph/ImageNode.hpp
     Gfx/Graph/TexgenNode.hpp
@@ -117,6 +117,7 @@ set(SRCS
     Gfx/Images/Executor.cpp
     Gfx/Images/Process.cpp
 
+    Gfx/Graph/decoders/GPUVideoDecoder.cpp
     Gfx/Graph/Node.cpp
     Gfx/Graph/Graph.cpp
     Gfx/Graph/RenderList.cpp
@@ -125,6 +126,7 @@ set(SRCS
     Gfx/Graph/ISFNode.cpp
     Gfx/Graph/RenderedISFNode.cpp
     Gfx/Graph/VideoNode.cpp
+    Gfx/Graph/VideoNodeRenderer.cpp
     Gfx/Graph/NodeRenderer.cpp
     Gfx/Graph/OutputNode.cpp
     Gfx/Graph/ScreenNode.cpp
@@ -221,3 +223,20 @@ endif()
 setup_score_plugin(${PROJECT_NAME})
 
 target_compile_options(${PROJECT_NAME} PRIVATE -std=c++2a)
+
+if(SCORE_INSTALL_HEADERS)
+  install(
+    FILES
+      Gfx/Qt5CompatPush
+      Gfx/Qt5CompatPop
+    DESTINATION include/score/Gfx
+    COMPONENT Devel
+    OPTIONAL
+  )
+endif()
+
+if(SCORE_ISF_TESTER)
+add_executable(ISFTester tests/ISFTester.cpp)
+target_link_libraries(ISFTester PRIVATE score_plugin_gfx)
+endif()
+

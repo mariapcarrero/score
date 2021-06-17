@@ -71,7 +71,7 @@ struct TexgenNode : NodeModel
     QRhiTexture* texture{};
     void customInit(RenderList& renderer) override
     {
-      defaultShaderMaterialInit(renderer);
+      m_material.init(renderer, node.input, m_samplers);
 
       auto& n = static_cast<const TexgenNode&>(this->node);
       auto& rhi = *renderer.state.rhi;
@@ -115,13 +115,6 @@ struct TexgenNode : NodeModel
       texture = nullptr;
     }
 
-    /*
-    std::optional<QSize> renderTargetSize() const noexcept override
-    {
-      auto& decoder = *static_cast<const RGB0Node&>(node).decoder;
-      const auto w = decoder.width(), h = decoder.height();
-      return QSize{w, h};
-    }*/
     int t = 0;
   };
 

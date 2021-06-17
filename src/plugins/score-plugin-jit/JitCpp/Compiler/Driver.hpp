@@ -12,7 +12,6 @@ struct Driver
   Driver(const std::string& fname)
       : X{0, nullptr}
       , ts_ctx{std::make_unique<llvm::LLVMContext>()}
-      , jit{*llvm::EngineBuilder().selectTarget()}
       , factory_name{fname}
   {
   }
@@ -31,7 +30,7 @@ struct Driver
     std::string cpp = *sourceFileName;
     auto filename = QFileInfo(QString::fromStdString(cpp)).fileName();
 
-    auto module = jit.compile(cpp, flags, opts, ts_ctx);
+    jit.compile(cpp, flags, opts, ts_ctx);
     auto t1 = std::chrono::high_resolution_clock::now();
 
     auto jitedFn = jit.getFunction<Fun_T>(factory_name);

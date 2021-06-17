@@ -10,7 +10,6 @@
 #include <score/plugins/qt_interfaces/FactoryInterface_QtInterface.hpp>
 #include <score/plugins/qt_interfaces/PluginRequirements_QtInterface.hpp>
 
-#include <ossia/dataflow/safe_nodes/node.hpp>
 #include <ossia/detail/for_each.hpp>
 
 #define make_uuid(text) score::uuids::string_generator::compute((text))
@@ -25,7 +24,7 @@ namespace Control
 struct Meta_base : public ossia::safe_nodes::base_metadata
 {
   static const constexpr Process::ProcessFlags flags
-      = Process::ProcessFlags::SupportsLasting;
+      = Process::ProcessFlags(Process::ProcessFlags::SupportsLasting | Process::ProcessFlags::ControlSurface);
 };
 
 template <typename Node>

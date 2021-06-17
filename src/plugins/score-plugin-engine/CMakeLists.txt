@@ -27,14 +27,13 @@ set(HDRS
   Execution/Clock/ManualClock.hpp
   Execution/Clock/DefaultClock.hpp
 
-  Execution/Transport/TransportInterface.hpp
   Execution/Transport/JackTransport.hpp
 
   Engine/ApplicationPlugin.hpp
   Engine/Listening/PlayListeningHandler.hpp
   Engine/Listening/PlayListeningHandlerFactory.hpp
 
-  Engine/Node/PdNode.hpp
+  Engine/Node/SimpleApi.hpp
   Engine/Node/Process.hpp
   Engine/Node/Inspector.hpp
   Engine/Node/Layer.hpp
@@ -67,7 +66,6 @@ set(SRCS
   Execution/Clock/ClockFactory.cpp
   Execution/Clock/DefaultClock.cpp
 
-  Execution/Transport/TransportInterface.cpp
   Execution/Transport/JackTransport.cpp
 
   Execution/Settings/ExecutorModel.cpp

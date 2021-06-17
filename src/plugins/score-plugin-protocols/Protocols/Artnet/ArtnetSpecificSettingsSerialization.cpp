@@ -158,14 +158,14 @@ void JSONWriter::write(Protocols::Artnet::Fixture& n)
 template <>
 void DataStreamReader::read(const Protocols::ArtnetSpecificSettings& n)
 {
-  m_stream << n.fixtures << n.rate;
+  m_stream << n.fixtures << n.host << n.rate << n.universe << n.transport;
   insertDelimiter();
 }
 
 template <>
 void DataStreamWriter::write(Protocols::ArtnetSpecificSettings& n)
 {
-  m_stream >> n.fixtures >> n.rate;
+  m_stream >> n.fixtures >> n.host >> n.rate >> n.universe >> n.transport;
   checkDelimiter();
 }
 
@@ -173,13 +173,22 @@ template <>
 void JSONReader::read(const Protocols::ArtnetSpecificSettings& n)
 {
   obj["Fixtures"] = n.fixtures;
+  obj["Host"] = n.host;
   obj["Rate"] = n.rate;
+  obj["Universe"] = n.universe;
+  obj["Transport"] = n.transport;
 }
 
 template <>
 void JSONWriter::write(Protocols::ArtnetSpecificSettings& n)
 {
   n.fixtures <<= obj["Fixtures"];
+  if(auto u = obj.tryGet("Host"))
+    n.host = QString::fromStdString(u->toStdString());
   n.rate <<= obj["Rate"];
+  if(auto u = obj.tryGet("Universe"))
+    n.universe = u->toInt();
+  if(auto u = obj.tryGet("Transport"))
+    n.transport = (decltype(n.transport))u->toInt();
 }
 #endif

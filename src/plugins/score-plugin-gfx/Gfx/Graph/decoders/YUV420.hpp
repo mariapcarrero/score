@@ -4,10 +4,15 @@
 namespace score::gfx
 {
 #include <Gfx/Qt5CompatPush> // clang-format: keep
+
+/**
+ * @brief Decodes YUV420 videos.
+ *
+ * Method was taken from
+ * https://www.roxlu.com/2014/039/decoding-h264-and-yuv420p-playback
+ */
 struct YUV420Decoder : GPUVideoDecoder
 {
-  // Taken from
-  // https://www.roxlu.com/2014/039/decoding-h264-and-yuv420p-playback
   static const constexpr auto yuv420_filter = R"_(#version 450
 
   layout(std140, binding = 0) uniform buf {
@@ -42,20 +47,16 @@ struct YUV420Decoder : GPUVideoDecoder
     fragColor.b = dot(yuv, B_cf);
   })_";
 
-  YUV420Decoder(NodeModel& n, Video::VideoInterface& d)
-      : node{n}
-      , decoder{d}
+  YUV420Decoder(Video::VideoInterface& d)
+      : decoder{d}
   {
   }
 
-  NodeModel& node;
   Video::VideoInterface& decoder;
 
-  void init(RenderList& r, GenericNodeRenderer& rendered) override
+  std::pair<QShader, QShader> init(RenderList& r) override
   {
     auto& rhi = *r.state.rhi;
-    std::tie(node.m_vertexS, node.m_fragmentS) = score::gfx::makeShaders(
-        node.mesh().defaultVertexShader(), yuv420_filter);
     const auto w = decoder.width, h = decoder.height;
 
     // Y
@@ -71,7 +72,7 @@ struct YUV420Decoder : GPUVideoDecoder
           QRhiSampler::ClampToEdge,
           QRhiSampler::ClampToEdge);
       sampler->create();
-      rendered.m_samplers.push_back({sampler, tex});
+      samplers.push_back({sampler, tex});
     }
 
     // U
@@ -87,7 +88,7 @@ struct YUV420Decoder : GPUVideoDecoder
           QRhiSampler::ClampToEdge,
           QRhiSampler::ClampToEdge);
       sampler->create();
-      rendered.m_samplers.push_back({sampler, tex});
+      samplers.push_back({sampler, tex});
     }
 
     // V
@@ -103,35 +104,30 @@ struct YUV420Decoder : GPUVideoDecoder
           QRhiSampler::ClampToEdge,
           QRhiSampler::ClampToEdge);
       sampler->create();
-      rendered.m_samplers.push_back({sampler, tex});
+      samplers.push_back({sampler, tex});
     }
+
+    return score::gfx::makeShaders(
+               TexturedTriangle::instance().defaultVertexShader(), yuv420_filter);
   }
 
   void exec(
       RenderList&,
-      GenericNodeRenderer& rendered,
       QRhiResourceUpdateBatch& res,
       AVFrame& frame) override
   {
-    setYPixels(rendered, res, frame.data[0], frame.linesize[0]);
-    setUPixels(rendered, res, frame.data[1], frame.linesize[1]);
-    setVPixels(rendered, res, frame.data[2], frame.linesize[2]);
-  }
-
-  void release(RenderList&, GenericNodeRenderer& n) override
-  {
-    for (auto [sampler, tex] : n.m_samplers)
-      tex->deleteLater();
+    setYPixels(res, frame.data[0], frame.linesize[0]);
+    setUPixels(res, frame.data[1], frame.linesize[1]);
+    setVPixels(res, frame.data[2], frame.linesize[2]);
   }
 
   void setYPixels(
-      GenericNodeRenderer& rendered,
       QRhiResourceUpdateBatch& res,
       uint8_t* pixels,
       int stride) const noexcept
   {
     const auto w = decoder.width, h = decoder.height;
-    auto y_tex = rendered.m_samplers[0].texture;
+    auto y_tex = samplers[0].texture;
 
     QRhiTextureUploadEntry entry{
         0, 0, createTextureUpload(pixels, w, h, 1, stride)};
@@ -141,13 +137,12 @@ struct YUV420Decoder : GPUVideoDecoder
   }
 
   void setUPixels(
-      GenericNodeRenderer& rendered,
       QRhiResourceUpdateBatch& res,
       uint8_t* pixels,
       int stride) const noexcept
   {
     const auto w = decoder.width / 2, h = decoder.height / 2;
-    auto u_tex = rendered.m_samplers[1].texture;
+    auto u_tex = samplers[1].texture;
 
     QRhiTextureUploadEntry entry{
         0, 0, createTextureUpload(pixels, w, h, 1, stride)};
@@ -157,13 +152,12 @@ struct YUV420Decoder : GPUVideoDecoder
   }
 
   void setVPixels(
-      GenericNodeRenderer& rendered,
       QRhiResourceUpdateBatch& res,
       uint8_t* pixels,
       int stride) const noexcept
   {
     const auto w = decoder.width / 2, h = decoder.height / 2;
-    auto v_tex = rendered.m_samplers[2].texture;
+    auto v_tex = samplers[2].texture;
 
     QRhiTextureUploadEntry entry{
         0, 0, createTextureUpload(pixels, w, h, 1, stride)};

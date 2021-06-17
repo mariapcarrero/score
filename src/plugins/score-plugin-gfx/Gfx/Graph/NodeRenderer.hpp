@@ -58,12 +58,8 @@ public:
 
   QRhiBuffer* m_processUBO{};
 
-  QRhiBuffer* m_materialUBO{};
-  int m_materialSize{};
+  DefaultShaderMaterial m_material;
   int64_t materialChangedIndex{-1};
-
-  friend struct Graph;
-  friend struct RenderList;
 
   TextureRenderTarget createRenderTarget(const RenderState& state);
   TextureRenderTarget renderTarget() const noexcept override { return m_rt; }
@@ -86,7 +82,6 @@ public:
       QRhiCommandBuffer& commands,
       QRhiResourceUpdateBatch& updateBatch) override;
 
-  void defaultShaderMaterialInit(RenderList& renderer);
   QRhiGraphicsPipeline* pipeline() const { return m_p.pipeline; }
   QRhiShaderResourceBindings* resources() const { return m_p.srb; }
 };

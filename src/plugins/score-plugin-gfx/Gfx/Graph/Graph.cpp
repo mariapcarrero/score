@@ -25,7 +25,7 @@ graphwalk(score::gfx::Node* node, std::vector<score::gfx::Node*>& list)
   }
 }
 
-void Graph::setupOutputs(GraphicsApi graphicsApi)
+void Graph::createAllRenderLists(GraphicsApi graphicsApi)
 {
 #if QT_CONFIG(vulkan)
   if (graphicsApi == Vulkan)
@@ -52,7 +52,7 @@ void Graph::setupOutputs(GraphicsApi graphicsApi)
   {
     renderer->release();
 
-    for (auto rn : renderer->renderedNodes)
+    for (auto rn : renderer->renderers)
       delete rn;
   }
 
@@ -71,7 +71,7 @@ void Graph::setupOutputs(GraphicsApi graphicsApi)
     if (!output->canRender())
     {
       auto onReady = [=] {
-        m_renderers.push_back(createRenderer(output, *output->renderState()));
+        m_renderers.push_back(createRenderList(output, *output->renderState()));
       };
       auto onResize = [=] {
         for (std::shared_ptr<RenderList>& renderer : this->m_renderers)
@@ -84,7 +84,7 @@ void Graph::setupOutputs(GraphicsApi graphicsApi)
           // TODO shouldn't that be in that "if" above ? we only resize
           // one viewport at a time...
           renderer.reset();
-          renderer = createRenderer(output, *output->renderState());
+          renderer = createRenderList(output, *output->renderState());
         }
       };
 
@@ -109,18 +109,13 @@ void Graph::setupOutputs(GraphicsApi graphicsApi)
     {
       if (auto rs = output->renderState())
       {
-        m_renderers.push_back(createRenderer(output, *rs));
+        m_renderers.push_back(createRenderList(output, *rs));
       }
       // output->window->state.hasSwapChain = true;
     }
 
     output->startRendering();
   }
-}
-
-const std::vector<OutputNode*>& Graph::outputs() const noexcept
-{
-  return m_outputs;
 }
 
 void Graph::relinkGraph()
@@ -137,7 +132,7 @@ void Graph::relinkGraph()
     r.nodes.clear();
     r.nodes.push_back(out);
 
-    r.renderedNodes.clear();
+    r.renderers.clear();
 
     auto& model_nodes = r.nodes;
     {
@@ -163,11 +158,11 @@ void Graph::relinkGraph()
           }
           else
           {
-            rn->releaseWithoutRenderTarget(r);
+            rn->release(r);
             rn->init(r);
           }
           SCORE_ASSERT(rn);
-          r.renderedNodes.push_back(rn);
+          r.renderers.push_back(rn);
         }
       }
       else if (model_nodes.size() == 1)
@@ -177,7 +172,7 @@ void Graph::relinkGraph()
         rn->release(r);
       }
     }
-    r.output->onRendererChange();
+    r.output.onRendererChange();
   }
 }
 
@@ -194,24 +189,20 @@ static void createNodeRenderer(score::gfx::Node& node, RenderList& r)
   auto rn = node.createRenderer(r);
 
   // Register the node with the renderer
-  r.renderedNodes.push_back(rn);
+  r.renderers.push_back(rn);
 
   // Register the rendered nodes with their parents
   node.renderedNodes[&r] = rn;
 }
 
 std::shared_ptr<RenderList>
-Graph::createRenderer(OutputNode* output, RenderState state)
+Graph::createRenderList(OutputNode* output, RenderState state)
 {
-  auto ptr = std::make_shared<RenderList>();
+  auto ptr = std::make_shared<RenderList>(*output, state);
   for (auto& node : m_nodes)
     node->addedToGraph = false;
 
   RenderList& r = *ptr;
-  r.output = output;
-  output->setRenderer(ptr.get());
-  r.state = std::move(state);
-
   auto& model_nodes = r.nodes;
   {
     model_nodes.push_back(output);
@@ -240,7 +231,7 @@ Graph::createRenderer(OutputNode* output, RenderState state)
 
     if (model_nodes.size() > 1)
     {
-      for (auto rn : r.renderedNodes)
+      for (auto rn : r.renderers)
         rn->init(r);
     }
   }

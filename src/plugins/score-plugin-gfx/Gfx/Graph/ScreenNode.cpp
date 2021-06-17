@@ -27,6 +27,7 @@
 
 #include <QOffscreenSurface>
 #include <QWindow>
+#include <QScreen>
 
 namespace score::gfx
 {
@@ -41,7 +42,8 @@ static RenderState createRenderState(QWindow& window, GraphicsApi graphicsApi)
     QRhiGles2InitParams params;
     params.fallbackSurface = state.surface;
     params.window = &window;
-    state.rhi = QRhi::create(QRhi::OpenGLES2, &params, {});
+
+    state.rhi = QRhi::create(QRhi::OpenGLES2, &params, QRhi::EnableDebugMarkers);
     state.size = window.size();
     return state;
   }
@@ -53,7 +55,7 @@ static RenderState createRenderState(QWindow& window, GraphicsApi graphicsApi)
     QRhiVulkanInitParams params;
     params.inst = window.vulkanInstance();
     params.window = &window;
-    state.rhi = QRhi::create(QRhi::Vulkan, &params, {});
+    state.rhi = QRhi::create(QRhi::Vulkan, &params, QRhi::EnableDebugMarkers);
     state.size = window.size();
     return state;
   }
@@ -134,7 +136,7 @@ void ScreenNode::startRendering()
     m_window->onRender = [this](QRhiCommandBuffer& commands) {
       if (auto r = m_window->state.renderer)
       {
-        m_window->m_canRender = r->renderedNodes.size() > 1;
+        m_window->m_canRender = r->renderers.size() > 1;
         r->render(commands);
       }
     };
@@ -145,8 +147,9 @@ void ScreenNode::onRendererChange()
 {
   if (m_window)
     if (auto r = m_window->state.renderer)
-      m_window->m_canRender = r->renderedNodes.size() > 1;
+      m_window->m_canRender = r->renderers.size() > 1;
 }
+
 void ScreenNode::stopRendering()
 {
   if (m_window)
@@ -168,6 +171,49 @@ RenderList* ScreenNode::renderer() const
     return m_window->state.renderer;
   else
     return nullptr;
+}
+
+void ScreenNode::setScreen(QScreen* scr)
+{
+  m_screen = scr;
+  if(m_window)
+  {
+    m_window->setScreen(scr);
+  }
+}
+
+void ScreenNode::setPosition(QPoint pos)
+{
+  m_pos = pos;
+  if(m_window)
+  {
+    m_window->setPosition(pos);
+  }
+}
+
+void ScreenNode::setSize(QSize sz)
+{
+  m_sz = sz;
+  if(m_window)
+  {
+    m_window->setGeometry({m_window->position(), sz});
+  }
+}
+
+void ScreenNode::setFullScreen(bool b)
+{
+  m_fullScreen = b;
+  if(m_window)
+  {
+    if(b)
+    {
+      m_window->showFullScreen();
+    }
+    else
+    {
+      m_window->showNormal();
+    }
+  }
 }
 
 void ScreenNode::createOutput(
@@ -213,13 +259,30 @@ void ScreenNode::createOutput(
     }
     */
 
+    if (m_screen)
+    {
+      m_window->setScreen(m_screen);
+    }
+
     if (m_fullScreen)
     {
       m_window->showFullScreen();
     }
     else
     {
-      m_window->resize(1280, 720);
+      if(m_pos)
+      {
+        m_window->setPosition(*m_pos);
+      }
+
+      if(!m_sz)
+      {
+        m_window->resize(1280, 720);
+      }
+      else
+      {
+        m_window->setGeometry({m_window->position(), *m_sz});
+      }
       m_window->show();
     }
   }

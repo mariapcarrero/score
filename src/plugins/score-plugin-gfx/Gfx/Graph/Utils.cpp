@@ -106,6 +106,7 @@ Pipeline buildPipeline(
 {
   auto& rhi = *renderer.state.rhi;
   auto ps = rhi.newGraphicsPipeline();
+  ps->setName("buildPipeline::ps");
   SCORE_ASSERT(ps);
 
   QRhiGraphicsPipeline::TargetBlend premulAlphaBlend;
@@ -159,7 +160,7 @@ QRhiShaderResourceBindings* createDefaultBindings(
 
   {
     const auto rendererBinding = QRhiShaderResourceBinding::uniformBuffer(
-        0, bindingStages, renderer.m_rendererUBO);
+        0, bindingStages, &renderer.outputUBO());
     bindings.push_back(rendererBinding);
   }
 
@@ -188,7 +189,7 @@ QRhiShaderResourceBindings* createDefaultBindings(
     // For cases where we do multi-pass rendering, set "this pass"'s input texture
     // to an empty texture instead as we can't output to an input texture
     if (actual_texture == rt.texture)
-      actual_texture = renderer.m_emptyTexture;
+      actual_texture = &renderer.emptyTexture();
 
     bindings.push_back(QRhiShaderResourceBinding::sampledTexture(
         binding,
@@ -255,5 +256,138 @@ QShader makeCompute(QString compute)
   return computeS;
 }
 
+void DefaultShaderMaterial::init(RenderList& renderer, const std::vector<Port*>& input, std::vector<Sampler>& samplers)
+{
+  auto& rhi = *renderer.state.rhi;
+
+  // Set up shader inputs
+  {
+    size = 0;
+    for (auto in : input)
+    {
+      switch (in->type)
+      {
+        case Types::Empty:
+          break;
+        case Types::Int:
+        case Types::Float:
+          size += 4;
+          break;
+        case Types::Vec2:
+          size += 8;
+          if (size % 8 != 0)
+            size += 4;
+          break;
+        case Types::Vec3:
+          while (size % 16 != 0)
+          {
+            size += 4;
+          }
+          size += 12;
+          break;
+        case Types::Vec4:
+          while (size % 16 != 0)
+          {
+            size += 4;
+          }
+          size += 16;
+          break;
+        case Types::Image:
+        {
+          auto sampler = rhi.newSampler(
+              QRhiSampler::Linear,
+              QRhiSampler::Linear,
+              QRhiSampler::None,
+              QRhiSampler::ClampToEdge,
+              QRhiSampler::ClampToEdge);
+          sampler->setName("DefaultShaderMaterial::sampler");
+          SCORE_ASSERT(sampler->create());
+
+          samplers.push_back(
+              {sampler, renderer.textureTargetForInputPort(*in)});
+          break;
+        }
+        case Types::Audio:
+          break;
+        case Types::Camera:
+          size += sizeof(ModelCameraUBO);
+          break;
+      }
+    }
+
+    if (size > 0)
+    {
+      buffer = rhi.newBuffer(
+          QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, size);
+      buffer->setName("DefaultShaderMaterial::buffer");
+      SCORE_ASSERT(buffer->create());
+    }
+  }
+}
+
 #include <Gfx/Qt5CompatPop> // clang-format: keep
+
+
+
+QSize resizeTextureSize(QSize sz, int min, int max) noexcept
+{
+  if(sz.width() >= min && sz.height() >= min && sz.width() <= max && sz.height() <= max)
+  {
+    return sz;
+  }
+  else
+  {
+    // To prevent division by zero
+    if(sz.width() < 1)
+    {
+      sz.rwidth() = 1;
+    }
+    if(sz.height() < 1)
+    {
+      sz.rheight() = 1;
+    }
+
+    // Rescale to max dimension by maintaining aspect ratio
+    if(sz.width() > max && sz.height() > max)
+    {
+      qreal factor = max / qreal(std::max(sz.width(), sz.height()));
+      sz.rwidth() *= factor;
+      sz.rheight() *= factor;
+    }
+    else if(sz.width() > max)
+    {
+      qreal factor = (qreal) max / sz.width();
+      sz.rwidth() *= factor;
+      sz.rheight() *= factor;
+    }
+    else if(sz.height() > max)
+    {
+      qreal factor = (qreal) max / sz.height();
+      sz.rwidth() *= factor;
+      sz.rheight() *= factor;
+    }
+
+    // In case we rescaled below min
+    if(sz.width() < min)
+    {
+      sz.rwidth() = min;
+    }
+    if(sz.height() < min)
+    {
+      sz.rheight() = min;
+    }
+  }
+  return sz;
+}
+
+QImage resizeTexture(const QImage& img, int min, int max) noexcept
+{
+  QSize sz = img.size();
+  QSize rescaled = resizeTextureSize(sz, min, max);
+  if(rescaled == sz || sz.width() == 0 || sz.height() == 0)
+    return img;
+
+  return img.scaled(rescaled, Qt::KeepAspectRatio);
+}
+
 }
