@@ -18,8 +18,7 @@ namespace Gfx
 
 gfx_exec_node::~gfx_exec_node()
 {
-  for (auto ctl : controls)
-    delete ctl.value;
+  controls.clear();
 }
 
 void gfx_exec_node::run(
@@ -32,18 +31,18 @@ void gfx_exec_node::run(
     for (int i = 0; i < n; i++)
     {
       auto& ctl = controls[i];
-      if (ctl.changed)
+      if (ctl->changed)
       {
-        ctl.port->write_value(std::move(*ctl.value), 0);
-        ctl.changed = false;
+        ctl->port->write_value(ctl->value, 0);
+        ctl->changed = false;
       }
     }
   }
-  gfx_message msg;
+
+  score::gfx::Message msg;
   msg.node_id = id;
   msg.token = tk;
-
-  msg.inputs.resize(this->m_inlets.size());
+  msg.input.resize(this->m_inlets.size());
   int inlet_i = 0;
   for (ossia::inlet* inlet : this->m_inlets)
   {
@@ -69,11 +68,12 @@ void gfx_exec_node::run(
       case ossia::value_port::which:
       {
         auto& p = inlet->cast<ossia::value_port>();
-
-        for (ossia::timed_value& val : p.get_data())
+        if(!p.get_data().empty())
         {
-          msg.inputs[inlet_i].push_back(std::move(val.value));
+          msg.input[inlet_i] = std::move(p.get_data().back().value);
+          p.get_data().clear();
         }
+
         break;
       }
       case ossia::texture_port::which:
@@ -94,7 +94,7 @@ void gfx_exec_node::run(
       case ossia::audio_port::which:
       {
         auto& p = inlet->cast<ossia::audio_port>();
-        msg.inputs[inlet_i].push_back(std::move(p.samples));
+        msg.input[inlet_i] = std::move(p.samples);
         break;
       }
     }

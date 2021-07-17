@@ -116,6 +116,13 @@ EffectProcessFactory_T<vst::Model>::descriptor(QString d) const
 
 namespace vst
 {
+QString Model::getString(AEffectOpcodes op, int param)
+{
+  char paramName[512] = {0};
+  dispatch(op, param, 0, paramName);
+  return QString::fromUtf8(paramName);
+}
+
 Model::Model(
     TimeVal t,
     const QString& path,
@@ -130,6 +137,10 @@ Model::Model(
 
 Model::~Model()
 {
+  auto& app
+      = score::GUIAppContext().applicationPlugin<vst::ApplicationPlugin>();
+  app.unregisterRunningVST(this);
+
   closePlugin();
 }
 
@@ -147,7 +158,6 @@ bool Model::hasExternalUI() const noexcept
 
 void Model::removeControl(int fxNum)
 {
-  qDebug() << "removeControl(int) " << fxNum;
   auto it = controls.find(fxNum);
   SCORE_ASSERT(it != controls.end());
   auto ctrl = it->second;
@@ -190,7 +200,24 @@ ControlInlet* Model::getControl(const Id<Process::Port>& p) const
 
 void Model::init()
 {
+  auto& app
+      = score::GUIAppContext().applicationPlugin<vst::ApplicationPlugin>();
+  app.registerRunningVST(this);
   //  connect(this, &VSTEffectModel::addControl, this, &VSTEffectModel::on_addControl);
+}
+
+void Model::setControlName(int fxnum, ControlInlet* ctrl)
+{
+  auto name = getString(effGetParamName, fxnum);
+  auto label = getString(effGetParamLabel, fxnum);
+  // auto display = get_string(effGetParamDisplay, i);
+
+  // Get the name
+  QString str = name;
+  if (!label.isEmpty())
+    str += "(" + label + ")";
+
+  ctrl->setName(name);
 }
 
 void Model::on_addControl(int i, float v)
@@ -208,18 +235,7 @@ void Model::on_addControl(int i, float v)
   ctrl->setValue(v);
 
   // Metadata
-  {
-    auto name = getString(effGetParamName, i);
-    auto label = getString(effGetParamLabel, i);
-    // auto display = get_string(effGetParamDisplay, i);
-
-    // Get the nameq
-    QString str = name;
-    if (!label.isEmpty())
-      str += "(" + label + ")";
-
-    ctrl->setName(name);
-  }
+  setControlName(i, ctrl);
 
   on_addControl_impl(ctrl);
 }
@@ -254,6 +270,7 @@ void Model::on_addControl_impl(ControlInlet* ctrl)
   controlAdded(ctrl->id());
 }
 
+
 void Model::reloadControls()
 {
   if (!fx)
@@ -261,15 +278,9 @@ void Model::reloadControls()
 
   for (auto ctrl : controls)
   {
+    setControlName(ctrl.first, ctrl.second);
     ctrl.second->setValue(fx->getParameter(ctrl.first));
   }
-}
-
-QString Model::getString(AEffectOpcodes op, int param)
-{
-  char paramName[512] = {0};
-  dispatch(op, param, 0, paramName);
-  return QString::fromUtf8(paramName);
 }
 
 intptr_t vst_host_callback(
@@ -288,8 +299,7 @@ intptr_t vst_host_callback(
     {
       case audioMasterGetTime:
       {
-        auto vst = reinterpret_cast<Model*>(effect->resvd1);
-        if (vst)
+        if (auto vst = reinterpret_cast<Model*>(effect->resvd1))
         {
           result = reinterpret_cast<intptr_t>(&vst->fx->info);
         }
@@ -306,12 +316,21 @@ intptr_t vst_host_callback(
         result = 1;
         break;
       }
+
       case audioMasterNeedIdle:
+      {
+        effect->dispatcher(effect, effEditIdle, 0, 0, nullptr, 0);
+        result = 1;
         break;
+      }
 
       case audioMasterIdle:
-        effect->dispatcher(effect, effEditIdle, 0, 0, nullptr, 0);
+      {
+        if (auto vst = reinterpret_cast<Model*>(effect->resvd1))
+          vst->needIdle.store(true, std::memory_order_release);
+        result = 1;
         break;
+      }
 
       case audioMasterCurrentId:
         result = effect->uniqueID;
@@ -319,18 +338,16 @@ intptr_t vst_host_callback(
 
       case audioMasterUpdateDisplay:
       {
-        auto vst = reinterpret_cast<Model*>(effect->resvd1);
-        if (vst)
+        if (auto vst = reinterpret_cast<Model*>(effect->resvd1))
         {
-          vst->reloadControls();
+          ossia::qt::run_async(vst, [=] { vst->reloadControls(); });
         }
         break;
       }
 
       case audioMasterAutomate:
       {
-        auto vst = reinterpret_cast<Model*>(effect->resvd1);
-        if (vst)
+        if (auto vst = reinterpret_cast<Model*>(effect->resvd1))
         {
           ossia::qt::run_async(vst, [=] {
             auto ctrl_it = vst->controls.find(index);
@@ -456,6 +473,8 @@ void Model::closePlugin()
 {
   if (fx)
   {
+    fx->fx->resvd1 = 0;
+    std::atomic_thread_fence(std::memory_order_seq_cst);
     if (externalUI)
     {
       auto w = reinterpret_cast<Window*>(externalUI);
@@ -642,6 +661,7 @@ void Model::load()
 template <>
 void DataStreamReader::read(const vst::Model& eff)
 {
+  readPorts(*this, eff.m_inlets, eff.m_outlets);
   m_stream << eff.m_effectId;
 
   if (eff.fx)
@@ -668,16 +688,24 @@ void DataStreamReader::read(const vst::Model& eff)
     }
   }
 
-  readPorts(*this, eff.m_inlets, eff.m_outlets);
   insertDelimiter();
 }
 
 template <>
 void DataStreamWriter::write(vst::Model& eff)
 {
+  writePorts(
+      *this,
+      components.interfaces<Process::PortFactoryList>(),
+      eff.m_inlets,
+      eff.m_outlets,
+      &eff);
+
   m_stream >> eff.m_effectId;
   int32_t kind = 0;
   m_stream >> kind;
+
+  eff.load();
 
   if (kind == SCORE_DATASTREAM_IDENTIFY_VST_CHUNK)
   {
@@ -685,11 +713,6 @@ void DataStreamWriter::write(vst::Model& eff)
     m_stream >> chunk;
     if (!chunk.empty())
     {
-      QPointer<vst::Model> ptr = &eff;
-      QTimer::singleShot(1000, [chunk = std::move(chunk), ptr]() mutable {
-        if (!ptr)
-          return;
-        auto& eff = *ptr;
         if (eff.fx)
         {
           if (eff.fx->fx->flags & effFlagsProgramChunks)
@@ -706,7 +729,6 @@ void DataStreamWriter::write(vst::Model& eff)
             }
           }
         }
-      });
     }
   }
   else if (kind == SCORE_DATASTREAM_IDENTIFY_VST_PARAMS)
@@ -714,29 +736,15 @@ void DataStreamWriter::write(vst::Model& eff)
     ossia::float_vector params;
     m_stream >> params;
 
-    QPointer<vst::Model> ptr = &eff;
-    QTimer::singleShot(1000, &eff, [params = std::move(params), ptr] {
-      if (!ptr)
-        return;
-      auto& eff = *ptr;
-      if (eff.fx)
+    if (eff.fx)
+    {
+      for (std::size_t i = 0; i < params.size(); i++)
       {
-        for (std::size_t i = 0; i < params.size(); i++)
-        {
-          eff.fx->setParameter(i, params[i]);
-        }
+        eff.fx->setParameter(i, params[i]);
       }
-    });
+    }
   }
 
-  writePorts(
-      *this,
-      components.interfaces<Process::PortFactoryList>(),
-      eff.m_inlets,
-      eff.m_outlets,
-      &eff);
-
-  eff.load();
   checkDelimiter();
 }
 
@@ -754,9 +762,7 @@ void JSONReader::read(const vst::Model& eff)
       auto res = eff.fx->dispatch(effGetChunk, 0, 0, &ptr, 0.f);
       if (ptr && res > 0)
       {
-        auto encoded
-            = websocketpp::base64_encode((const unsigned char*)ptr, res);
-        obj["Data"] = QString::fromStdString(encoded);
+        obj["Data"] = websocketpp::base64_encode((const unsigned char*)ptr, res);
       }
     }
     else
@@ -765,6 +771,23 @@ void JSONReader::read(const vst::Model& eff)
       stream.StartArray();
       for (int i = 0; i < eff.fx->fx->numParams; i++)
         stream.Double(eff.fx->getParameter(i));
+      stream.EndArray();
+    }
+  }
+  else
+  {
+    // VST could not be loaded, keep its internal data that was previously saved
+    // TODO do the same with the DataStream one
+    if(!eff.m_backup_chunk.empty())
+    {
+      obj["Data"] = eff.m_backup_chunk;
+    }
+    if(!eff.m_backup_float_data.empty())
+    {
+      stream.Key("Params");
+      stream.StartArray();
+      for (float param : eff.m_backup_float_data)
+        stream.Double(param);
       stream.EndArray();
     }
   }
@@ -792,56 +815,6 @@ void JSONWriter::write(vst::Model& eff)
     }
   }
 
-  QPointer<vst::Model> ptr = &eff;
-#if QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
-  QTimer::singleShot(
-      1000,
-      &eff,
-      [base_ptr = std::make_shared<rapidjson::Document>(clone(this->base)),
-       ptr] {
-        auto& base = *base_ptr;
-#else
-  QTimer::singleShot(1000, &eff, [base = clone(this->base), ptr] {
-#endif
-        if (!ptr)
-          return;
-        auto& eff = *ptr;
-        if (eff.fx)
-        {
-          if (eff.fx->fx->flags & effFlagsProgramChunks)
-          {
-            auto it = base.FindMember("Data");
-            if (it != base.MemberEnd())
-            {
-              auto b64 = websocketpp::base64_decode(
-                  JsonValue{it->value}.toStdString());
-              eff.fx->dispatch(effSetChunk, 0, b64.size(), b64.data(), 0.f);
-
-              const bool isSynth = eff.fx->fx->flags & effFlagsIsSynth;
-              for (std::size_t i = VST_FIRST_CONTROL_INDEX(isSynth);
-                   i < eff.inlets().size();
-                   i++)
-              {
-                auto inlet = safe_cast<vst::ControlInlet*>(eff.inlets()[i]);
-                inlet->setValue(eff.fx->getParameter(inlet->fxNum));
-              }
-            }
-          }
-          else
-          {
-            auto it = base.FindMember("Params");
-            if (it != base.MemberEnd())
-            {
-              const auto& arr = it->value.GetArray();
-              for (std::size_t i = 0; i < arr.Size(); i++)
-              {
-                eff.fx->setParameter(i, arr[i].GetDouble());
-              }
-            }
-          }
-        }
-      });
-
   writePorts(
       *this,
       components.interfaces<Process::PortFactoryList>(),
@@ -850,17 +823,72 @@ void JSONWriter::write(vst::Model& eff)
       &eff);
 
   eff.load();
+
+  // Reload controls
+  auto data_it = base.FindMember("Data");
+  auto params_it = base.FindMember("Params");
+  if (eff.fx)
+  {
+    if (eff.fx->fx->flags & effFlagsProgramChunks)
+    {
+      if (data_it != base.MemberEnd())
+      {
+        auto b64 = websocketpp::base64_decode(
+            JsonValue{data_it->value}.toStdString());
+        eff.fx->dispatch(effSetChunk, 0, b64.size(), b64.data(), 0.f);
+
+        const bool isSynth = eff.fx->fx->flags & effFlagsIsSynth;
+        for (std::size_t i = VST_FIRST_CONTROL_INDEX(isSynth);
+             i < eff.inlets().size();
+             i++)
+        {
+          auto inlet = safe_cast<vst::ControlInlet*>(eff.inlets()[i]);
+          inlet->setValue(eff.fx->getParameter(inlet->fxNum));
+        }
+      }
+    }
+    else
+    {
+      if (params_it != base.MemberEnd())
+      {
+        const auto& arr = params_it->value.GetArray();
+        for (std::size_t i = 0; i < arr.Size(); i++)
+        {
+          eff.fx->setParameter(i, arr[i].GetDouble());
+        }
+      }
+    }
+  }
+  else
+  {
+    // Couldn't load the VST, keep the vst data so that we can resave it
+    // TODO do the same with the DataStream one
+    if (data_it != base.MemberEnd())
+    {
+      eff.m_backup_chunk = JsonValue{data_it->value}.toStdString();
+    }
+
+    if (params_it != base.MemberEnd())
+    {
+      const auto& arr = params_it->value.GetArray();
+      eff.m_backup_float_data.resize(arr.Size());
+      for (std::size_t i = 0; i < arr.Size(); i++)
+      {
+        eff.m_backup_float_data[i] = arr[i].GetDouble();
+      }
+    }
+  }
 }
 
 template <>
 void DataStreamReader::read<vst::ControlInlet>(const vst::ControlInlet& p)
 {
-  m_stream << p.fxNum;
+  m_stream << p.fxNum << p.m_value;
 }
 template <>
 void DataStreamWriter::write<vst::ControlInlet>(vst::ControlInlet& p)
 {
-  m_stream >> p.fxNum;
+  m_stream >> p.fxNum >> p.m_value;
 }
 
 template <>

@@ -3,6 +3,7 @@
 #include <score/graphics/ZoomItem.hpp>
 
 #include <QGraphicsSceneDragDropEvent>
+
 namespace Scenario
 {
 
@@ -70,6 +71,8 @@ NodalIntervalView::NodalIntervalView(
 
     connect(
         item, &score::ZoomItem::recenter, this, &NodalIntervalView::recenter);
+    connect(
+        this, &score::EmptyRectItem::sizeChanged, this, &NodalIntervalView::recenter);
   }
 }
 
@@ -80,7 +83,7 @@ void NodalIntervalView::recenter()
 
   double w_ratio = parentRect.width() / childRect.width();
   double h_ratio = parentRect.height() / childRect.height();
-  double z = std::min(1., std::min(w_ratio, h_ratio));
+  double z = std::clamp(std::min(w_ratio, h_ratio), 0.01, 1.0);
   m_container->setScale(z);
 
   auto childCenter
@@ -99,7 +102,7 @@ NodalIntervalView::~NodalIntervalView()
 void NodalIntervalView::on_drop(QPointF pos, const QMimeData* data)
 {
   m_context.app.interfaces<Scenario::IntervalDropHandlerList>().drop(
-      m_context, m_model, pos, *data);
+      m_context, m_model, m_container->mapFromParent(pos), *data);
 }
 
 void NodalIntervalView::on_playPercentageChanged(double t, TimeVal parent_dur)

@@ -122,11 +122,35 @@ ScreenNode::ScreenNode(std::shared_ptr<Window> w)
   m_window->showFullScreen();
 }
 
-ScreenNode::~ScreenNode() { }
+ScreenNode::~ScreenNode()
+{
+  if(m_swapChain)
+  {
+    m_swapChain->release();
+    delete m_swapChain;
+    if(m_window)
+    {
+      m_window->m_swapChain = nullptr;
+      m_window->m_hasSwapChain = false;
+    }
+  }
+
+  if(m_window)
+  {
+    delete m_window->state.renderPassDescriptor;
+    m_window->state.renderPassDescriptor = nullptr;
+    delete m_window->state.rhi;
+    m_window->state.rhi = nullptr;
+  }
+
+}
 
 bool ScreenNode::canRender() const
 {
-  return bool(m_window);
+  // FIXME - Graph::onReady / Graph::onResize :
+  // swapchain is recreated even when size does not change at the
+  // beginning
+  return bool(m_window)/* && m_window->m_hasSwapChain */;
 }
 
 void ScreenNode::startRendering()
@@ -134,7 +158,7 @@ void ScreenNode::startRendering()
   if (m_window)
   {
     m_window->onRender = [this](QRhiCommandBuffer& commands) {
-      if (auto r = m_window->state.renderer)
+      if (auto r = m_window->state.renderer.lock())
       {
         m_window->m_canRender = r->renderers.size() > 1;
         r->render(commands);
@@ -146,8 +170,16 @@ void ScreenNode::startRendering()
 void ScreenNode::onRendererChange()
 {
   if (m_window)
-    if (auto r = m_window->state.renderer)
+  {
+    if (auto r = m_window->state.renderer.lock())
+    {
       m_window->m_canRender = r->renderers.size() > 1;
+    }
+    else
+    {
+      m_window->m_canRender = false;
+    }
+  }
 }
 
 void ScreenNode::stopRendering()
@@ -156,11 +188,12 @@ void ScreenNode::stopRendering()
   {
     m_window->m_canRender = false;
     m_window->onRender = [](QRhiCommandBuffer&) {};
+    m_window->state.renderer = {};
     ////window->state.hasSwapChain = false;
   }
 }
 
-void ScreenNode::setRenderer(RenderList* r)
+void ScreenNode::setRenderer(std::shared_ptr<RenderList> r)
 {
   m_window->state.renderer = r;
 }
@@ -168,7 +201,7 @@ void ScreenNode::setRenderer(RenderList* r)
 RenderList* ScreenNode::renderer() const
 {
   if (m_window)
-    return m_window->state.renderer;
+    return m_window->state.renderer.lock().get();
   else
     return nullptr;
 }
@@ -237,7 +270,12 @@ void ScreenNode::createOutput(
       // TODO depth stencil, render buffer, etc ?
       m_swapChain = m_window->state.rhi->newSwapChain();
       m_window->m_swapChain = m_swapChain;
+      m_depthStencil = m_window->state.rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil,
+                                                   QSize(), // no need to set the size here, due to UsedWithSwapChainOnly
+                                                   1,
+                                                   QRhiRenderBuffer::UsedWithSwapChainOnly);
       m_swapChain->setWindow(m_window.get());
+      m_swapChain->setDepthStencil(m_depthStencil);
       m_swapChain->setSampleCount(1);
       m_swapChain->setFlags({});
       m_window->state.renderPassDescriptor
@@ -311,7 +349,9 @@ void ScreenNode::destroyOutput()
   s.surface = nullptr;
 
   if (m_ownsWindow)
+  {
     m_window.reset();
+  }
 }
 
 void ScreenNode::updateGraphicsAPI(GraphicsApi api)
@@ -332,11 +372,14 @@ RenderState* ScreenNode::renderState() const
   return nullptr;
 }
 
-class ScreenNode::Renderer : public GenericNodeRenderer
+class ScreenNode::Renderer : public score::gfx::OutputNodeRenderer
 {
 public:
+  TextureRenderTarget m_rt;
+
+  TextureRenderTarget renderTargetForInput(const Port& p) override { return m_rt; }
   Renderer(const RenderState& state, const ScreenNode& parent)
-      : GenericNodeRenderer{parent}
+      : score::gfx::OutputNodeRenderer{}
   {
     if (parent.m_swapChain)
     {
@@ -350,11 +393,29 @@ public:
       qDebug() << "Warning: swapchain not found in screenRenderTarget";
     }
   }
+
+  ~Renderer()
+  {
+  }
+  void init(RenderList& renderer) override
+  {
+  }
+  void update(RenderList& renderer, QRhiResourceUpdateBatch& res) override
+  {
+  }
+  QRhiResourceUpdateBatch* runRenderPass(RenderList&, QRhiCommandBuffer& commands, Edge& e) override
+  {
+    return nullptr;
+  }
+  void release(RenderList&) override
+  {
+  }
 };
 
-score::gfx::NodeRenderer*
+score::gfx::OutputNodeRenderer*
 ScreenNode::createRenderer(RenderList& r) const noexcept
 {
   return new Renderer{r.state, *this};
 }
+
 }

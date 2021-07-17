@@ -1,5 +1,5 @@
 #pragma once
-#include <Engine/Node/PdNode.hpp>
+#include <Engine/Node/SimpleApi.hpp>
 
 #include <ossia/detail/hash_map.hpp>
 #include <ossia/detail/math.hpp>
@@ -343,7 +343,7 @@ struct Node
     static const constexpr auto description
         = "Factor Oracle algorithm ."; // TODO cite
     static const constexpr auto tags = std::array<const char*, 0>{};
-    static const constexpr auto uuid
+    static const uuid_constexpr auto uuid
         = make_uuid("66F1C352-C48F-40A2-9283-35C2CB376258");
 
     static const constexpr auto controls

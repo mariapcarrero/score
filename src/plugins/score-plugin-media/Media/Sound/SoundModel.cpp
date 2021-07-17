@@ -1,4 +1,5 @@
 #include <Audio/Settings/Model.hpp>
+#include <Process/Dataflow/PortSerialization.hpp>
 #include <Media/Sound/SoundModel.hpp>
 #include <Media/Tempo.hpp>
 
@@ -87,6 +88,14 @@ void ProcessModel::setFile(const QString& file)
     on_mediaChanged();
     prettyNameChanged();
   }
+}
+
+void ProcessModel::setFileForced(const QString& file)
+{
+  loadFile(file);
+
+  on_mediaChanged();
+  prettyNameChanged();
 }
 
 std::shared_ptr<AudioFile>& ProcessModel::file()

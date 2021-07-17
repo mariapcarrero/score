@@ -1,3 +1,4 @@
+#include "ISFNode.hpp"
 #include <Gfx/Graph/Graph.hpp>
 #include <Gfx/Graph/NodeRenderer.hpp>
 #include <Gfx/Graph/OutputNode.hpp>
@@ -7,11 +8,43 @@
 #include <score/gfx/Vulkan.hpp>
 #include <score/tools/Debug.hpp>
 
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/topological_sort.hpp>
+#include <boost/graph/graphviz.hpp>
+
 namespace score::gfx
 {
-static void
-graphwalk(score::gfx::Node* node, std::vector<score::gfx::Node*>& list)
+template <typename Graph_T, typename IO>
+void print_graph(Graph_T& g, IO& stream)
 {
+  std::stringstream s;
+  boost::write_graphviz(
+      s, g, [&](auto& out, auto v) {
+        if (g[v])
+          {
+
+            out << "[label=\"";
+            auto n = g[v];
+            if(auto i = dynamic_cast<ISFNode*>(n))out << i->m_descriptor.description;
+            else out << "output";
+            out<< "\"]";
+          }
+        else
+          out << "[]";
+      },
+      [](auto&&...) {});
+
+  stream << s.str() << "\n";
+}
+
+using Vertex = score::gfx::Node*;
+using GraphImpl = boost::
+    adjacency_list<boost::vecS, boost::vecS, boost::directedS, Vertex>;
+using VertexMap = std::map<score::gfx::Node*, GraphImpl::vertex_descriptor>;
+static void
+graphwalk(score::gfx::Node* node, std::vector<score::gfx::Node*>& list, GraphImpl& g, VertexMap& m)
+{
+  auto sink_desc = m[node];
   for (auto inputs : node->input)
   {
     for (auto edge : inputs->edges)
@@ -19,9 +52,52 @@ graphwalk(score::gfx::Node* node, std::vector<score::gfx::Node*>& list)
       if (!edge->source->node->addedToGraph)
       {
         list.push_back(edge->source->node);
+
+        auto src_desc = boost::add_vertex(edge->source->node, g);
+        m[edge->source->node] = src_desc;
         edge->source->node->addedToGraph = true;
+        boost::add_edge(src_desc, sink_desc, g);
+      }
+      else
+      {
+        auto src_desc = m[edge->source->node];
+        boost::add_edge(src_desc, sink_desc, g);
       }
     }
+  }
+}
+
+static void graphwalk(std::vector<score::gfx::Node*>& model_nodes)
+{
+  GraphImpl g;
+  VertexMap m;
+  auto k = boost::add_vertex(model_nodes.front(), g);
+  m[model_nodes.front()] = k;
+
+  std::size_t processed = 0;
+  while (processed != model_nodes.size())
+  {
+    graphwalk(model_nodes[processed], model_nodes, g, m);
+    processed++;
+  }
+
+  ossia::int_vector topo_order;
+  topo_order.reserve(model_nodes.size());
+
+  try
+  {
+    model_nodes.clear();
+    boost::topological_sort(g, std::back_inserter(topo_order));
+    for (auto it = topo_order.begin(); it != topo_order.end(); ++it)
+    {
+      auto e = *it;
+      SCORE_ASSERT(g[e]);
+      model_nodes.push_back(g[e]);
+    }
+  }
+  catch (const std::exception& e)
+  {
+    qDebug() << "Invalid gfx graph: " << e.what();
   }
 }
 
@@ -51,9 +127,6 @@ void Graph::createAllRenderLists(GraphicsApi graphicsApi)
   for (auto& renderer : m_renderers)
   {
     renderer->release();
-
-    for (auto rn : renderer->renderers)
-      delete rn;
   }
 
   m_renderers.clear();
@@ -71,6 +144,7 @@ void Graph::createAllRenderLists(GraphicsApi graphicsApi)
     if (!output->canRender())
     {
       auto onReady = [=] {
+        if(output->canRender())
         m_renderers.push_back(createRenderList(output, *output->renderState()));
       };
       auto onResize = [=] {
@@ -78,31 +152,35 @@ void Graph::createAllRenderLists(GraphicsApi graphicsApi)
         {
           if (renderer.get() == output->renderer())
           {
-            renderer->release();
-          }
+            auto old_renderer = renderer;
+            auto new_renderer = createRenderList(output, *output->renderState());
 
-          // TODO shouldn't that be in that "if" above ? we only resize
-          // one viewport at a time...
-          renderer.reset();
-          renderer = createRenderList(output, *output->renderState());
+            old_renderer->release();
+
+            renderer = new_renderer;
+
+            old_renderer.reset();
+            break;
+          }
         }
       };
 
+      auto onUpdate = [this] {
+        switch (this->m_outputs.size())
+        {
+          case 1:
+            if (this->m_vsync_callback)
+              this->m_vsync_callback();
+            break;
+          default:
+            break;
+        }
+      };
       // TODO only works for one output !!
       output->createOutput(
           graphicsApi,
           onReady,
-          [this] {
-            switch (this->m_outputs.size())
-            {
-              case 1:
-                if (this->m_vsync_callback)
-                  this->m_vsync_callback();
-                break;
-              default:
-                break;
-            }
-          },
+          onUpdate,
           onResize);
     }
     else
@@ -137,38 +215,43 @@ void Graph::relinkGraph()
     auto& model_nodes = r.nodes;
     {
       // In which order do we want to render stuff
-      int processed = 0;
-      while (processed != model_nodes.size())
-      {
-        graphwalk(model_nodes[processed], model_nodes);
-        processed++;
-      }
-      std::reverse(model_nodes.begin(), model_nodes.end());
+      graphwalk(model_nodes);
 
       if (model_nodes.size() > 1)
       {
         for (auto node : model_nodes)
         {
-          auto rn = node->renderedNodes[&r];
-          if (!rn)
+          score::gfx::NodeRenderer* rn{};
+          auto it = node->renderedNodes.find(&r);
+          if(it == node->renderedNodes.end())
           {
             rn = node->createRenderer(r);
-            node->renderedNodes[&r] = rn;
-            rn->init(r);
+            SCORE_ASSERT(rn);
+
+            node->renderedNodes.emplace(&r, rn);
+            //rn->init(r);
           }
           else
           {
+            rn = it->second;
+            SCORE_ASSERT(rn);
             rn->release(r);
-            rn->init(r);
+            //rn->init(r);
           }
           SCORE_ASSERT(rn);
           r.renderers.push_back(rn);
         }
+
+        for (auto node : r.renderers)
+        {
+          node->init(r);
+        }
       }
       else if (model_nodes.size() == 1)
       {
-        auto rn = model_nodes[0]->renderedNodes[&r];
-        assert(rn);
+        SCORE_ASSERT(model_nodes[0]->renderedNodes.find(&r) != model_nodes[0]->renderedNodes.end());
+        auto rn = model_nodes[0]->renderedNodes.find(&r)->second;
+        SCORE_ASSERT(rn);
         rn->release(r);
       }
     }
@@ -192,13 +275,15 @@ static void createNodeRenderer(score::gfx::Node& node, RenderList& r)
   r.renderers.push_back(rn);
 
   // Register the rendered nodes with their parents
-  node.renderedNodes[&r] = rn;
+  SCORE_ASSERT(node.renderedNodes.find(&r) == node.renderedNodes.end());
+  node.renderedNodes.emplace(&r, rn);
 }
 
 std::shared_ptr<RenderList>
 Graph::createRenderList(OutputNode* output, RenderState state)
 {
   auto ptr = std::make_shared<RenderList>(*output, state);
+  output->setRenderer(ptr);
   for (auto& node : m_nodes)
     node->addedToGraph = false;
 
@@ -208,16 +293,10 @@ Graph::createRenderList(OutputNode* output, RenderState state)
     model_nodes.push_back(output);
 
     // In which order do we want to render stuff
-    std::size_t processed = 0;
-    while (processed != model_nodes.size())
-    {
-      graphwalk(model_nodes[processed], model_nodes);
-      processed++;
-    }
-    std::reverse(model_nodes.begin(), model_nodes.end());
+    graphwalk(model_nodes);
 
     // Now we have the nodes in the order in which they are going to
-    // be processed
+    // be init'd (e.g. output node first to create the render targets)
     // We create renderers for each of them
     for (auto node : model_nodes)
     {
@@ -231,15 +310,17 @@ Graph::createRenderList(OutputNode* output, RenderState state)
 
     if (model_nodes.size() > 1)
     {
-      for (auto rn : r.renderers)
-        rn->init(r);
+      for (auto node : r.renderers)
+        node->init(r);
     }
   }
 
   return ptr;
 }
 
-Graph::Graph() { }
+Graph::Graph() {
+
+}
 
 Graph::~Graph()
 {
@@ -252,6 +333,8 @@ Graph::~Graph()
   {
     out->destroyOutput();
   }
+
+  clearEdges();
 }
 
 void Graph::addNode(Node* n)

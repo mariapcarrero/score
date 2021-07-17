@@ -5,13 +5,7 @@
 namespace score::gfx
 {
 
-struct MeshBuffers
-{
-  QRhiBuffer* mesh{};
-  QRhiBuffer* index{};
-};
-
-struct OutputNode;
+class OutputNode;
 /**
  * @brief List of nodes to be rendered to an output.
  *
@@ -25,6 +19,7 @@ class SCORE_PLUGIN_GFX_EXPORT RenderList
 {
 public:
   explicit RenderList(OutputNode& output, const RenderState& state);
+  ~RenderList();
 
   /**
    * @brief Initialize data for this renderer.
@@ -60,13 +55,11 @@ public:
   void maybeRebuild();
 
   /**
-   * @brief Obtain the texture corresponding to an input port.
+   * @brief Obtain the texture corresponding to an output port.
    *
    * This is done by looking for the render target which corresponds to a given port.
-   *
-   * If it is not found, the empty 1x1 texture is returned.
    */
-  QRhiTexture* textureTargetForInputPort(Port& port);
+  TextureRenderTarget renderTargetForOutput(const Edge& edge) noexcept;
 
   /**
    * @brief Output node to which this RenderList is rendering to

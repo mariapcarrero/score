@@ -17,12 +17,12 @@ endif()
 
 add_subdirectory(3rdparty/libisf)
 
-if(WIN32)
-set(SPOUT_SRCS
-    Gfx/SpoutDevice.hpp
-    Gfx/SpoutDevice.cpp
-)
-endif()
+#if(WIN32)
+#set(SPOUT_SRCS
+#    Gfx/SpoutDevice.hpp
+#    Gfx/SpoutDevice.cpp
+#)
+#endif()
 
 find_package(freenect2)
 if(NOT "${freenect2_LIBRARIES}")
@@ -53,6 +53,12 @@ set(HDRS
     Gfx/Images/Metadata.hpp
     Gfx/Images/Process.hpp
     Gfx/Images/Layer.hpp
+    Gfx/Images/ImageListChooser.hpp
+
+    Gfx/Text/Executor.hpp
+    Gfx/Text/Metadata.hpp
+    Gfx/Text/Process.hpp
+    Gfx/Text/Layer.hpp
 
     Gfx/Graph/Window.hpp
     Gfx/Graph/RenderState.hpp
@@ -69,6 +75,8 @@ set(HDRS
     Gfx/Graph/PhongNode.hpp
     Gfx/Graph/ImageNode.hpp
     Gfx/Graph/TexgenNode.hpp
+    Gfx/Graph/ScreenNode.hpp
+    Gfx/Graph/TextNode.hpp
     Gfx/Graph/ShaderCache.hpp
     Gfx/Graph/Utils.hpp
     Gfx/Graph/decoders/GPUVideoDecoder.hpp
@@ -116,6 +124,10 @@ set(SRCS
 
     Gfx/Images/Executor.cpp
     Gfx/Images/Process.cpp
+    Gfx/Images/ImageListChooser.cpp
+
+    Gfx/Text/Executor.cpp
+    Gfx/Text/Process.cpp
 
     Gfx/Graph/decoders/GPUVideoDecoder.cpp
     Gfx/Graph/Node.cpp
@@ -130,6 +142,7 @@ set(SRCS
     Gfx/Graph/NodeRenderer.cpp
     Gfx/Graph/OutputNode.cpp
     Gfx/Graph/ScreenNode.cpp
+    Gfx/Graph/TextNode.cpp
     Gfx/Graph/PhongNode.cpp
     Gfx/Graph/Utils.cpp
     Gfx/Graph/Window.cpp
@@ -204,9 +217,9 @@ if(APPLE)
 endif()
 
 if(WIN32)
-  add_subdirectory("${3RDPARTY_FOLDER}/Spout" "${CMAKE_CURRENT_BINARY_DIR}/Spout")
-  target_link_libraries(${PROJECT_NAME} PRIVATE Spout)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_SPOUT)
+#   add_subdirectory("${3RDPARTY_FOLDER}/Spout" "${CMAKE_CURRENT_BINARY_DIR}/Spout")
+#   target_link_libraries(${PROJECT_NAME} PRIVATE Spout)
+#   target_compile_definitions(${PROJECT_NAME} PRIVATE HAS_SPOUT)
 endif()
 
 if(freenect2_FOUND)
@@ -238,5 +251,10 @@ endif()
 if(SCORE_ISF_TESTER)
 add_executable(ISFTester tests/ISFTester.cpp)
 target_link_libraries(ISFTester PRIVATE score_plugin_gfx)
+endif()
+
+if(SCORE_VIDEO_TESTER)
+add_executable(VideoTester tests/VideoTester.cpp)
+target_link_libraries(VideoTester PRIVATE score_plugin_gfx)
 endif()
 

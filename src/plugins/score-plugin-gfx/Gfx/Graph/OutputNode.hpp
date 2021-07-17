@@ -1,36 +1,34 @@
 ﻿#pragma once
 #include <Gfx/Graph/Node.hpp>
+#include <Gfx/Graph/NodeRenderer.hpp>
 #include <Gfx/Graph/RenderState.hpp>
 #include <Gfx/Graph/Uniforms.hpp>
 
 #include <score_plugin_gfx_export.h>
 namespace score::gfx
 {
+class SCORE_PLUGIN_GFX_EXPORT OutputNodeRenderer : public score::gfx::NodeRenderer
+{
+public:
+  virtual ~OutputNodeRenderer();
+  virtual void finishFrame(
+      RenderList&,
+      QRhiCommandBuffer& commands);
+};
 
 class Window;
 /**
  * @brief Base class for sink nodes (QWindow, spout, syphon, NDI output, ...)
  */
-struct SCORE_PLUGIN_GFX_EXPORT OutputNode : NodeModel
+class SCORE_PLUGIN_GFX_EXPORT OutputNode : public score::gfx::Node
 {
-  static const constexpr auto filter = R"_(#version 450
-layout(location = 0) in vec2 v_texcoord;
-layout(location = 0) out vec4 fragColor;
-
-layout(binding = 3) uniform sampler2D tex;
-
-void main()
-{
-    fragColor = texture(tex, v_texcoord);
-}
-)_";
-
+public:
   virtual ~OutputNode();
 
-  const TexturedTriangle& m_mesh = TexturedTriangle::instance();
-
-  virtual void setRenderer(RenderList*) = 0;
+  virtual void setRenderer(std::shared_ptr<RenderList>) = 0;
   virtual RenderList* renderer() const = 0;
+
+  virtual OutputNodeRenderer* createRenderer(RenderList& r) const noexcept = 0;
 
   virtual void startRendering() = 0;
   virtual void stopRendering() = 0;
@@ -50,6 +48,5 @@ void main()
 
 protected:
   explicit OutputNode();
-  const Mesh& mesh() const noexcept override { return this->m_mesh; }
 };
 }

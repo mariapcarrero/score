@@ -11,10 +11,9 @@ namespace score::gfx
 struct ImagesNode : NodeModel
 {
 public:
-  explicit ImagesNode(std::vector<score::gfx::Image> dec);
+  explicit ImagesNode();
   virtual ~ImagesNode();
 
-  const Mesh& mesh() const noexcept override;
   score::gfx::NodeRenderer*
   createRenderer(RenderList& r) const noexcept override;
 
@@ -25,11 +24,16 @@ public:
     float opacity{1.};
     float position[2]{0.5, 0.5};
     float scale[2]{1., 1.};
+    float imageSize[2]{1., 1.};
   } ubo;
 
+  std::atomic_int imagesChanged{};
+
 private:
-  const TexturedTriangle& m_mesh = TexturedTriangle::instance();
+  void process(const Message& msg) override;
+
   std::vector<score::gfx::Image> images;
+  std::vector<QImage*> linearImages;
 };
 struct FullScreenImageNode : NodeModel
 {
@@ -37,13 +41,11 @@ public:
   explicit FullScreenImageNode(QImage dec);
   virtual ~FullScreenImageNode();
 
-  const Mesh& mesh() const noexcept override;
   score::gfx::NodeRenderer*
   createRenderer(RenderList& r) const noexcept override;
 
   class Renderer;
 private:
-  const TexturedTriangle& m_mesh = TexturedTriangle::instance();
   QImage m_image;
 };
 }

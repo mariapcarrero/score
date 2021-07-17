@@ -29,6 +29,7 @@ set(PROCESS_HDRS
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/ProcessList.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/AudioPortComboBox.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/Port.hpp"
+"${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/PortSerialization.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/TimeSignature.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/PortItem.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/PortFactory.hpp"
@@ -41,6 +42,7 @@ set(PROCESS_HDRS
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/ControlWidgetDomains.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/WidgetInlets.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/MinMaxFloatPort.hpp"
+"${CMAKE_CURRENT_SOURCE_DIR}/Process/OfflineAction/OfflineAction.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Drop/ProcessDropHandler.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/State/MessageNode.hpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/State/ProcessStateDataInterface.hpp"
@@ -122,6 +124,8 @@ set(PROCESS_SRCS
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Dataflow/MinMaxFloatPort.cpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Drop/ProcessDropHandler.cpp"
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Layer/LayerContextMenu.cpp"
+
+"${CMAKE_CURRENT_SOURCE_DIR}/Process/OfflineAction/OfflineAction.cpp"
 
 "${CMAKE_CURRENT_SOURCE_DIR}/Process/Preset.cpp"
 

@@ -18,19 +18,23 @@ class SCORE_LIB_BASE_EXPORT QGraphicsHSVChooser final
 {
   W_OBJECT(QGraphicsHSVChooser)
   Q_INTERFACES(QGraphicsItem)
+private:
   QRectF m_rect{0., 0., 140., 100.};
 
-private:
   double h{}, s{}, v{};
+  double prev_v{-1.};
   ossia::vec4f m_value{};
+  QImage hs_zone;
   bool m_grab{};
 
 public:
   QGraphicsHSVChooser(QGraphicsItem* parent);
 
   void setRect(const QRectF& r);
-  void setValue(ossia::vec4f v);
-  ossia::vec4f value() const;
+  void setRgbaValue(ossia::vec4f v);
+  void setHsvValue(ossia::vec4f v);
+  ossia::vec4f rgbaValue() const;
+  ossia::vec4f hsvValue() const;
 
   bool moving = false;
 
