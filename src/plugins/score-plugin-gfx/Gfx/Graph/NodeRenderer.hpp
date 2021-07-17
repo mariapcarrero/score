@@ -13,17 +13,24 @@ public:
   explicit NodeRenderer() noexcept;
   virtual ~NodeRenderer();
 
-  virtual std::optional<QSize> renderTargetSize() const noexcept = 0;
-  virtual TextureRenderTarget renderTarget() const noexcept = 0;
+  virtual TextureRenderTarget renderTargetForInput(const Port& input) = 0;
+
   virtual void init(RenderList& renderer) = 0;
   virtual void update(RenderList& renderer, QRhiResourceUpdateBatch& res) = 0;
-  virtual void runPass(
+
+  virtual void runInitialPasses(
       RenderList&,
       QRhiCommandBuffer& commands,
-      QRhiResourceUpdateBatch& updateBatch)
-      = 0;
+      QRhiResourceUpdateBatch*& res,
+      Edge& edge);
+
+  [[nodiscard]]
+  virtual QRhiResourceUpdateBatch* runRenderPass(
+      RenderList&,
+      QRhiCommandBuffer& commands,
+      Edge& edge);
+
   virtual void release(RenderList&) = 0;
-  virtual void releaseWithoutRenderTarget(RenderList&) = 0;
 };
 
 /**
@@ -42,16 +49,17 @@ public:
   {
   }
 
+  TextureRenderTarget renderTargetForInput(const Port& p) override;
   virtual ~GenericNodeRenderer() { }
 
   const NodeModel& node;
 
-  TextureRenderTarget m_rt;
+  //TextureRenderTarget m_rt;
 
   std::vector<Sampler> m_samplers;
 
   // Pipeline
-  Pipeline m_p;
+  ossia::small_vector<std::pair<Edge*, Pipeline>, 2> m_p;
 
   QRhiBuffer* m_meshBuffer{};
   QRhiBuffer* m_idxBuffer{};
@@ -61,29 +69,29 @@ public:
   DefaultShaderMaterial m_material;
   int64_t materialChangedIndex{-1};
 
-  TextureRenderTarget createRenderTarget(const RenderState& state);
-  TextureRenderTarget renderTarget() const noexcept override { return m_rt; }
-
-  std::optional<QSize> renderTargetSize() const noexcept override;
   // Render loop
-  virtual void customInit(RenderList& renderer);
+  void defaultMeshInit(RenderList& renderer, const Mesh& mesh);
+  void processUBOInit(RenderList& renderer);
+  void defaultPassesInit(RenderList& renderer, const Mesh& mesh);
   void init(RenderList& renderer) override;
 
-  virtual void
-  customUpdate(RenderList& renderer, QRhiResourceUpdateBatch& res);
+  void defaultUBOUpdate(RenderList& renderer, QRhiResourceUpdateBatch& res);
   void update(RenderList& renderer, QRhiResourceUpdateBatch& res) override;
 
-  virtual void customRelease(RenderList&);
+  void defaultRelease(RenderList&);
   void release(RenderList&) override;
-  void releaseWithoutRenderTarget(RenderList&) override;
 
-  void runPass(
+  void defaultRenderPass(
+      RenderList&,
+      const Mesh& mesh,
+      QRhiCommandBuffer& commands,
+      Edge& edge);
+
+  QRhiResourceUpdateBatch* runRenderPass(
       RenderList&,
       QRhiCommandBuffer& commands,
-      QRhiResourceUpdateBatch& updateBatch) override;
+      Edge& edge) override;
 
-  QRhiGraphicsPipeline* pipeline() const { return m_p.pipeline; }
-  QRhiShaderResourceBindings* resources() const { return m_p.srb; }
 };
 
 }

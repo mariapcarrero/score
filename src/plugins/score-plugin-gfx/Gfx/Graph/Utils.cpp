@@ -11,9 +11,12 @@ createRenderTarget(const RenderState& state, QRhiTexture* tex)
   TextureRenderTarget ret;
   ret.texture = tex;
 
+  ret.renderBuffer = state.rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, tex->pixelSize(), 1);
+  ret.renderBuffer->create();
+
   QRhiColorAttachment color0{ret.texture};
 
-  auto renderTarget = state.rhi->newTextureRenderTarget({color0});
+  auto renderTarget = state.rhi->newTextureRenderTarget({color0, ret.renderBuffer});
   SCORE_ASSERT(renderTarget);
 
   auto renderPass = renderTarget->newCompatibleRenderPassDescriptor();
@@ -117,6 +120,7 @@ Pipeline buildPipeline(
 
   ps->setDepthTest(false);
   ps->setDepthWrite(false);
+  ps->setTopology(QRhiGraphicsPipeline::TriangleStrip);
   // m_ps->setCullMode(QRhiGraphicsPipeline::CullMode::Back);
   // m_ps->setFrontFace(QRhiGraphicsPipeline::FrontFace::CCW);
 
@@ -144,7 +148,7 @@ Pipeline buildPipeline(
 QRhiShaderResourceBindings* createDefaultBindings(
     const RenderList& renderer,
     const TextureRenderTarget& rt,
-    QRhiBuffer* m_processUBO,
+    QRhiBuffer* processUBO,
     QRhiBuffer* materialUBO,
     const std::vector<Sampler>& samplers)
 {
@@ -164,10 +168,11 @@ QRhiShaderResourceBindings* createDefaultBindings(
     bindings.push_back(rendererBinding);
   }
 
+  if(processUBO)
   {
     const auto standardUniformBinding
         = QRhiShaderResourceBinding::uniformBuffer(
-            1, bindingStages, m_processUBO);
+            1, bindingStages, processUBO);
     bindings.push_back(standardUniformBinding);
   }
 
@@ -211,12 +216,12 @@ Pipeline buildPipeline(
     const QShader& vertexS,
     const QShader& fragmentS,
     const TextureRenderTarget& rt,
-    QRhiBuffer* m_processUBO,
+    QRhiBuffer* processUBO,
     QRhiBuffer* materialUBO,
     const std::vector<Sampler>& samplers)
 {
   auto bindings = createDefaultBindings(
-      renderer, rt, m_processUBO, materialUBO, samplers);
+      renderer, rt, processUBO, materialUBO, samplers);
   return buildPipeline(renderer, mesh, vertexS, fragmentS, rt, bindings);
 }
 
@@ -294,6 +299,8 @@ void DefaultShaderMaterial::init(RenderList& renderer, const std::vector<Port*>&
           break;
         case Types::Image:
         {
+          SCORE_TODO;
+          /*
           auto sampler = rhi.newSampler(
               QRhiSampler::Linear,
               QRhiSampler::Linear,
@@ -305,6 +312,7 @@ void DefaultShaderMaterial::init(RenderList& renderer, const std::vector<Port*>&
 
           samplers.push_back(
               {sampler, renderer.textureTargetForInputPort(*in)});
+*/
           break;
         }
         case Types::Audio:

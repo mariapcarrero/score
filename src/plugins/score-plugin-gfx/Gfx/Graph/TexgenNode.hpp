@@ -69,8 +69,11 @@ struct TexgenNode : NodeModel
     ~Rendered() { }
 
     QRhiTexture* texture{};
-    void customInit(RenderList& renderer) override
+    void init(RenderList& renderer) override
     {
+      const TexturedTriangle& mesh = TexturedTriangle::instance();
+      defaultMeshInit(renderer, mesh);
+      processUBOInit(renderer);
       m_material.init(renderer, node.input, m_samplers);
 
       auto& n = static_cast<const TexgenNode&>(this->node);
@@ -93,11 +96,13 @@ struct TexgenNode : NodeModel
         sampler->create();
         m_samplers.push_back({sampler, texture});
       }
+      defaultPassesInit(renderer, mesh);
     }
 
     void
-    customUpdate(RenderList& renderer, QRhiResourceUpdateBatch& res) override
+    update(RenderList& renderer, QRhiResourceUpdateBatch& res) override
     {
+      defaultUBOUpdate(renderer, res);
       auto& n = static_cast<const TexgenNode&>(this->node);
       if (func_t f = n.function.load())
       {
@@ -109,10 +114,12 @@ struct TexgenNode : NodeModel
       }
     }
 
-    void customRelease(RenderList&) override
+    void release(RenderList& r) override
     {
       texture->deleteLater();
       texture = nullptr;
+
+      defaultRelease(r);
     }
 
     int t = 0;
@@ -132,7 +139,6 @@ struct TexgenNode : NodeModel
   using func_t = void (*)(unsigned char* rgb, int width, int height, int t);
   std::atomic<func_t> function{};
 
-  const Mesh& mesh() const noexcept override { return this->m_mesh; }
   score::gfx::NodeRenderer*
   createRenderer(RenderList& r) const noexcept override
   {

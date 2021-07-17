@@ -278,7 +278,7 @@ public:
       else
       {
         // We create the first interval / process
-        m_itv = &m_macro.createIntervalAfter(scenar, m_createdState, pt);
+        m_itv = &m_macro.createIntervalAfter(scenar, m_createdState, {pt.date + duration, pt.y});
         decltype(auto) proc = fun(m_macro, *m_itv);
         m_macro.showRack(*m_itv);
         return proc;
@@ -376,7 +376,6 @@ bool DropProcessInScenario::drop(
   if (auto res = handlers.getDrop(mime, ctx); !res.empty())
   {
     auto t = handlers.getMaxDuration(res).value_or(TimeVal::fromMsecs(10000.));
-
     DropProcessInScenarioHelper dropper(m_magnetic, pres, pos, t);
 
     score::Dispatcher_T disp{dropper.macro()};

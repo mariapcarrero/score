@@ -194,6 +194,8 @@ void Component::on_scriptChange(const QString& script)
             auto ctrl = qobject_cast<Process::ControlInlet*>(
                 process().inlets()[idx]);
             SCORE_ASSERT(ctrl);
+
+            disconnect(ctrl, nullptr, this, nullptr);
             connect(
                 ctrl,
                 &Process::ControlInlet::valueChanged,
@@ -241,8 +243,13 @@ void Component::on_scriptChange(const QString& script)
 
   // Send the updates to the node
   commands.push_back([proc, script, inls, outls]() mutable {
-    proc->root_inputs() = std::move(inls);
-    proc->root_outputs() = std::move(outls);
+
+    for(auto& inl : proc->root_inputs()) delete inl;
+    for(auto& outl : proc->root_outputs()) delete outl;
+
+    using namespace std;
+    swap(proc->root_inputs(), inls);
+    swap(proc->root_outputs(), outls);
     proc->setScript(std::move(script));
   });
 

@@ -10,7 +10,11 @@ W_OBJECT_IMPL(score::QGraphicsHSVChooser);
 
 namespace score
 {
-QGraphicsHSVChooser::QGraphicsHSVChooser(QGraphicsItem* parent) { }
+
+QGraphicsHSVChooser::QGraphicsHSVChooser(QGraphicsItem* parent)
+: hs_zone{100, 100, QImage::Format_ARGB32}
+
+{ }
 
 void QGraphicsHSVChooser::setRect(const QRectF& r)
 {
@@ -39,14 +43,41 @@ static auto initHsvColors = [] {
   }
   return 0;
 }();
+
+static QImage& v_zone()
+{
+  static QImage v_zone = [] {
+    QImage v_zone{20, 100, QImage::Format_ARGB32};
+
+    {
+      auto img_data = v_zone.bits();
+      for (int j = 0; j < 100; j++)
+      {
+        const QRgb col = valueColors[j];
+        for (int i = 0; i < 20; i++)
+        {
+          img_data[0] = qBlue(col);
+          img_data[1] = qGreen(col);
+          img_data[2] = qRed(col);
+          img_data[3] = 255;
+          img_data += 4;
+        }
+      }
+    }
+
+    return v_zone;
+  }();
+  return v_zone;
+}
 }
 void QGraphicsHSVChooser::paint(
     QPainter* painter,
     const QStyleOptionGraphicsItem* option,
     QWidget* widget)
 {
-  static QImage hs_zone{100, 100, QImage::Format_ARGB32};
+  if(prev_v != v)
   {
+    // Redraw the hue chooser with the correct light intensity
     auto img_data = hs_zone.bits();
     for (int j = 0; j < 100; j++)
     {
@@ -60,32 +91,19 @@ void QGraphicsHSVChooser::paint(
         img_data += 4;
       }
     }
+    prev_v = v;
   }
 
-  static QImage v_zone{20, 100, QImage::Format_ARGB32};
-  {
-    auto img_data = v_zone.bits();
-    for (int j = 0; j < 100; j++)
-    {
-      const QRgb col = valueColors[j];
-      for (int i = 0; i < 20; i++)
-      {
-        img_data[0] = qBlue(col);
-        img_data[1] = qGreen(col);
-        img_data[2] = qRed(col);
-        img_data[3] = 255;
-        img_data += 4;
-      }
-    }
-  }
 
   painter->drawImage(QPointF{0, 0}, hs_zone);
-  painter->drawImage(QPointF{110, 0}, v_zone);
+  painter->drawImage(QPointF{110, 0}, v_zone());
 
   const auto color
       = QColor::fromRgbF(m_value[0], m_value[1], m_value[2]).toHsv();
   auto x = color.hsvHueF() * 100.;
   auto y = color.hsvSaturationF() * 100.;
+  if(x < 0)
+    x = 0;
   auto val_y = color.valueF() * 100.;
 
   painter->setPen(score::Skin::instance().DarkGray.main.pen0);
@@ -95,12 +113,16 @@ void QGraphicsHSVChooser::paint(
   painter->drawLine(QPointF{111., val_y}, QPointF{130., val_y});
 }
 
-std::array<float, 4> QGraphicsHSVChooser::value() const
+std::array<float, 4> QGraphicsHSVChooser::rgbaValue() const
 {
   return m_value;
 }
+std::array<float, 4> QGraphicsHSVChooser::hsvValue() const
+{
+  return std::array<float, 4>{float(h), float(s), float(v), 1.0};
+}
 
-void QGraphicsHSVChooser::setValue(std::array<float, 4> v)
+void QGraphicsHSVChooser::setRgbaValue(std::array<float, 4> v)
 {
   m_value = v;
   auto hsv = QColor::fromRgbF(v[0], v[1], v[2], v[3]).toHsv();
@@ -108,6 +130,20 @@ void QGraphicsHSVChooser::setValue(std::array<float, 4> v)
   this->h = hsv.hueF();
   this->s = hsv.saturationF();
   this->v = hsv.valueF();
+  update();
+}
+void QGraphicsHSVChooser::setHsvValue(std::array<float, 4> v)
+{
+  this->h = v[0];
+  this->s = v[1];
+  this->v = v[2];
+
+  auto rgb = QColor::fromHsvF(this->h, this->s, this->v);
+  m_value[0] = rgb.redF();
+  m_value[1] = rgb.greenF();
+  m_value[2] = rgb.blueF();
+  m_value[3] = 1.0f;
+
   update();
 }
 

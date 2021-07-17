@@ -18,7 +18,7 @@ struct SCORE_PLUGIN_GFX_EXPORT ScreenNode : OutputNode
   bool canRender() const override;
   void stopRendering() override;
 
-  void setRenderer(RenderList* r) override;
+  void setRenderer(std::shared_ptr<RenderList> r) override;
   RenderList* renderer() const override;
 
   void setScreen(QScreen*);
@@ -35,7 +35,7 @@ struct SCORE_PLUGIN_GFX_EXPORT ScreenNode : OutputNode
   void updateGraphicsAPI(GraphicsApi) override;
 
   RenderState* renderState() const override;
-  score::gfx::NodeRenderer*
+  score::gfx::OutputNodeRenderer*
   createRenderer(RenderList& r) const noexcept override;
 
   const std::shared_ptr<Window>& window() const noexcept { return m_window; }
@@ -44,6 +44,7 @@ private:
   class Renderer;
   std::shared_ptr<Window> m_window{};
   QRhiSwapChain* m_swapChain{};
+  QRhiRenderBuffer* m_depthStencil{};
   QScreen* m_screen{};
   std::optional<QPoint> m_pos{};
   std::optional<QSize> m_sz{};
@@ -51,5 +52,6 @@ private:
   bool m_embedded{};
   bool m_fullScreen{};
   bool m_ownsWindow{};
+
 };
 }

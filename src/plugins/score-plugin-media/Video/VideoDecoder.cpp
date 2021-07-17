@@ -401,48 +401,57 @@ bool VideoDecoder::open_stream() noexcept
     auto codecPar = stream->codecpar;
     if ((m_codec = avcodec_find_decoder(codecPar->codec_id)))
     {
-      if (stream->codecpar->codec_id == AV_CODEC_ID_HAP)
+      if(codecPar->width <= 0 || codecPar->height <= 0)
       {
-        // TODO this is a hack, we store the FOURCC in the format...
-        memcpy(&pixel_format, &stream->codecpar->codec_tag, 4);
-        width = codecPar->width;
-        height = codecPar->height;
-        fps = av_q2d(stream->avg_frame_rate);
-
-        m_codecContext = nullptr;
-        m_codec = nullptr;
-        res = true;
+        qDebug() << "VideoThumbnailer: invalid video: width or height is 0";
+        res = false;
       }
       else
       {
-        pixel_format = (AVPixelFormat)codecPar->format;
-        width = codecPar->width;
-        height = codecPar->height;
-        fps = av_q2d(stream->avg_frame_rate);
-        m_codecContext = stream->codec;
-        res = !(avcodec_open2(m_codecContext, m_codec, nullptr) < 0);
-
-        switch (pixel_format)
+        if (stream->codecpar->codec_id == AV_CODEC_ID_HAP)
         {
-          // Supported formats for gpu decoding
-          case AV_PIX_FMT_YUV420P:
-          case AV_PIX_FMT_YUVJ422P:
-          case AV_PIX_FMT_YUV422P:
-          case AV_PIX_FMT_RGB0:
-          case AV_PIX_FMT_RGBA:
-          case AV_PIX_FMT_BGR0:
-          case AV_PIX_FMT_BGRA:
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(56, 19, 100)
-          case AV_PIX_FMT_GRAYF32LE:
-          case AV_PIX_FMT_GRAYF32BE:
-#endif
-          case AV_PIX_FMT_GRAY8:
-            break;
-          // Other formats get rgb'd
-          default:
+          // TODO this is a hack, we store the FOURCC in the format...
+          memcpy(&pixel_format, &stream->codecpar->codec_tag, 4);
+          width = codecPar->width;
+          height = codecPar->height;
+          fps = av_q2d(stream->avg_frame_rate);
+
+          m_codecContext = nullptr;
+          m_codec = nullptr;
+          res = true;
+        }
+        else
+        {
+          pixel_format = (AVPixelFormat)codecPar->format;
+          width = codecPar->width;
+          height = codecPar->height;
+          fps = av_q2d(stream->avg_frame_rate);
+          m_codecContext = stream->codec;
+          res = !(avcodec_open2(m_codecContext, m_codec, nullptr) < 0);
+
+          switch (pixel_format)
           {
-            init_scaler();
-            break;
+            // Supported formats for gpu decoding
+            case AV_PIX_FMT_YUV420P:
+            case AV_PIX_FMT_YUVJ420P:
+            case AV_PIX_FMT_YUVJ422P:
+            case AV_PIX_FMT_YUV422P:
+            case AV_PIX_FMT_RGB0:
+            case AV_PIX_FMT_RGBA:
+            case AV_PIX_FMT_BGR0:
+            case AV_PIX_FMT_BGRA:
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(56, 19, 100)
+            case AV_PIX_FMT_GRAYF32LE:
+            case AV_PIX_FMT_GRAYF32BE:
+#endif
+            case AV_PIX_FMT_GRAY8:
+              break;
+            // Other formats get rgb'd
+            default:
+            {
+              init_scaler();
+              break;
+            }
           }
         }
       }
@@ -478,30 +487,28 @@ ReadFrame
 VideoDecoder::enqueue_frame(const AVPacket* pkt, AVFrame** frame) noexcept
 {
   ReadFrame read = readVideoFrame(m_codecContext, pkt, *frame);
-  if (read.frame)
+  if (read.frame && m_rescale)
   {
-    if (m_rescale)
-    {
-      // alloc an rgb frame
-      auto m_rgb = av_frame_alloc();
-      m_rgb->width = this->width;
-      m_rgb->height = this->height;
-      m_rgb->format = AV_PIX_FMT_RGBA;
-      av_frame_get_buffer(m_rgb, 0);
+    // alloc an rgb frame
+    auto rgb = get_new_frame();
+    rgb->width = this->width;
+    rgb->height = this->height;
+    rgb->format = AV_PIX_FMT_RGBA;
+    av_frame_get_buffer(rgb, 0);
 
-      // 2. Resize
-      sws_scale(
-          m_rescale,
-          (*frame)->data,
-          (*frame)->linesize,
-          0,
-          this->height,
-          m_rgb->data,
-          m_rgb->linesize);
+    // 2. Resize
+    sws_scale(
+        m_rescale,
+        (*frame)->data,
+        (*frame)->linesize,
+        0,
+        this->height,
+        rgb->data,
+        rgb->linesize);
 
-      av_frame_free(frame);
-      *frame = m_rgb;
-    }
+    av_frame_free(frame);
+    *frame = rgb;
+    read.frame = rgb;
   }
   return read;
 }

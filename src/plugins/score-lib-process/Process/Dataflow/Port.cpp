@@ -1,6 +1,7 @@
 #include "Port.hpp"
 
-#include "PortItem.hpp"
+#include <Process/Dataflow/PortItem.hpp>
+#include <Process/Dataflow/PortSerialization.hpp>
 
 #include <Control/Widgets.hpp>
 #include <Process/Dataflow/Cable.hpp>
@@ -1166,13 +1167,24 @@ template <>
 SCORE_LIB_PROCESS_EXPORT void
 JSONWriter::write<Process::AudioOutlet>(Process::AudioOutlet& p)
 {
+  if(auto it = obj.tryGet("GainInlet"))
   {
-    JSONWriter writer{obj["GainInlet"]};
+    JSONWriter writer{*it};
     p.gainInlet = Process::load_control_inlet(writer, &p);
   }
+  else
   {
-    JSONWriter writer{obj["PanInlet"]};
+    p.gainInlet = std::make_unique<Process::ControlInlet>(Id<Process::Port>{0}, &p);
+  }
+
+  if(auto it = obj.tryGet("PanInlet"))
+  {
+    JSONWriter writer{*it};
     p.panInlet = Process::load_control_inlet(writer, &p);
+  }
+  else
+  {
+    p.panInlet = std::make_unique<Process::ControlInlet>(Id<Process::Port>{1}, &p);
   }
 
   p.m_gain = obj["Gain"].toDouble();
