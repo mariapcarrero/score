@@ -1,5 +1,4 @@
 #pragma once
-#include <Engine/Node/PdNode.hpp>
 
 #include <ossia/detail/hash_map.hpp>
 #include <ossia/detail/math.hpp>
@@ -268,7 +267,9 @@ public:
         i = i + 1;
         int len = this->states_.size();
         if (i >= len)
-          i = len - 1;
+          i = len - 2;
+        if (i == len - 1)
+          i = i - 1;
         T w = this->states_[i].transition_[0].symbol_;
         v.push_back(w);
       }
@@ -386,21 +387,58 @@ struct Node
     {
       ::FactorOracle2MIDI::Notes temp;
       temp.pitch = val.bytes[1];
-      self.oracle.input_values.push_back(val.bytes[1]);
-      self.oracle.AddLetter(
-          self.oracle.current_state, self.oracle.input_values);
-      self.oracle.current_state = self.oracle.current_state + 1;
+      std::cout << (int)val.bytes[0] << " " << (int)val.bytes[1] << " " << (int)val.bytes[2] << " " << std::endl;
+      if((int)val.bytes[2] != 0) {
+        self.oracle.input_values.push_back((int)val.bytes[1]);
+        self.oracle.AddLetter(
+            self.oracle.current_state, self.oracle.input_values);
+        self.oracle.current_state = self.oracle.current_state + 1;
+        for (int i = 0; i < self.oracle.input_values.size()+1; i++){
+
+          std::cout << "STATE[" << i << "]:\n" << "LRS: "<< self.oracle.states_[i].lrs_ << "\n";
+          std::cout << "Suffix: " << self.oracle.states_[i].suffix_transition_ << "\n";
+          std::cout << "Transitions: " << "\n";
+          for (int w = 0; w < self.oracle.states_[i].transition_.size(); w++)
+          {
+            std::cout << self.oracle.states_[i].transition_[w].first_state_ << " " << self.oracle.states_[i].transition_[w].last_state_ << "\n";
+          }
+          std::cout << "\n";
+
+        }
+
+      }
     }
 
     if (!regen.get_data().empty())
     {
+      std::cout <<"entro data not empty" << std::endl;
+      for(int i = 0; i < self.oracle.input_values.size(); i++)
+      {
+          std::cout << self.oracle.input_values[i] << " ";
+      }
+      std:: cout << std::endl;
       if (!self.oracle.input_values.empty())
       {
+        std::cout <<"entro input values" << std::endl;
         std::vector<int> temp_vec = self.oracle.CallGenerate(seq_len, 0.6);
+        //std::string vec = std::to_string(temp_vec[0]) + " " + std::to_string(temp_vec[1]) + " " + std::to_string(temp_vec[2]) + " " + std::endl;
+        std::cout << temp_vec[0] ;
         //self.sequence = self.oracle.CallGenerate(seq_len, 0.6);
-        self.midi_bytes.push_back({144, 0, 40});
-        self.midi_bytes[seq_len][1] = temp_vec[seq_len];
+        for(int i = 0; i < seq_len; i++)
+        {
+          unsigned char middle_number = (char)((int)temp_vec[i]);
+          self.midi_bytes.push_back({144, 0, 127});
+          self.midi_bytes[i][1] = middle_number;
+        }
         self.sequence = self.midi_bytes;
+        for(int i = 0; i < self.sequence.size(); i++)
+        {
+          for(int w = 0; w < 3; w++)
+          {
+            std::cout << self.sequence[i][w] ;
+          }
+          std:: cout << std::endl;
+        }
       }
     }
 
@@ -408,10 +446,12 @@ struct Node
     {
       for (auto& bang : bangs.get_data())
       {
+        std::cout <<"entro output" << std::endl;
         self.sequence_idx = ossia::clamp<int64_t>(
             (int64_t)self.sequence_idx, 0, (int64_t)self.sequence.size() - 1);
         libremidi::message tmp;
         tmp.bytes = self.sequence[self.sequence_idx];
+        std::cout << (int)tmp.bytes[1] << std::endl;
         tmp.timestamp = bang.timestamp;
         output_midi.messages.push_back(tmp);
         self.sequence_idx = (self.sequence_idx + 1) % self.sequence.size();
