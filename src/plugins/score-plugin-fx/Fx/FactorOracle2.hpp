@@ -85,9 +85,9 @@ class FactorOracle
 public:
   int phi = 0, k = 0, fo_iter = 0, current_state = 1;
   std::vector<T> input_values;
-  std::vector<State<T>> states_; /**< std::vector of all the states */
+  std::vector<State<T>> states_; /**< vector of all the states */
   std::vector<std::vector<int>>
-      RevSuffix; /**< std::vector where each position has all the suffix transitions directed to each state */
+      RevSuffix; /**< vector where each position has all the suffix transitions directed to each state */
   FactorOracle()
   {
     this->states_.resize(2);
